@@ -1,0 +1,37 @@
+{
+  "port": 4647,
+  "dataDir": "./data",
+  "workers": {
+    "claude-main": {
+      "name": "Claude 主员工",
+      "kind": "claude-cli",
+      "command": "C:\\Users\\YOUR_NAME\\.local\\bin\\claude.exe",
+      "cwd": "C:\\path\\to\\trusted-workspace",
+      "permissionMode": "acceptEdits",
+      "model": "",
+      "effort": "",
+      "retry": {
+        "maxAttempts": 3,
+        "baseDelayMs": 3000,
+        "maxDelayMs": 60000
+      }
+    },
+    "codex-main": {
+      "name": "Codex 员工",
+      "kind": "codex-cli",
+      "command": "node",
+      "argsPrefix": [
+        "C:\\Users\\YOUR_NAME\\AppData\\Roaming\\npm\\node_modules\\@openai\\codex\\bin\\codex.js"
+      ],
+      "cwd": "C:\\path\\to\\trusted-workspace",
+      "permissionMode": "workspace-write",
+      "autoApprove": true,
+      "model": "",
+      "retry": {
+        "maxAttempts": 3,
+        "baseDelayMs": 3000,
+        "maxDelayMs": 60000
+      }
+    }
+  }
+}

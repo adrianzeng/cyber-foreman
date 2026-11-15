@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Hub</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M5 7.5h14M5 12h9M5 16.5h14"/><circle cx="18" cy="12" r="2"/></svg>
+        </div>
+        <div>
+          <h1>Agent Hub</h1>
+          <p>DSH 主控 · 本地任务总线 · 员工按项目分组</p>
+        </div>
+      </div>
+      <div class="connection" id="connection">
+        <span class="dot"></span>
+        <span id="connection-text">连接中</span>
+      </div>
+    </header>
+
+    <section class="stages" aria-label="工单阶段">
+      <button class="stage-card" type="button" data-stage="running">
+        <span class="stage-label"><i class="stage-dot running"></i>在跑</span>
+        <strong id="stage-running">0</strong>
+        <span class="stage-hint">机器正在干，不用管</span>
+      </button>
+      <button class="stage-card" type="button" data-stage="waiting">
+        <span class="stage-label"><i class="stage-dot waiting"></i>等你</span>
+        <strong id="stage-waiting">0</strong>
+        <span class="stage-hint">需要你看一眼或决定</span>
+      </button>
+      <button class="stage-card" type="button" data-stage="queued">
+        <span class="stage-label"><i class="stage-dot queued"></i>队列里</span>
+        <strong id="stage-queued">0</strong>
+        <span class="stage-hint">排着，还没轮到</span>
+      </button>
+      <button class="stage-card" type="button" data-stage="done">
+        <span class="stage-label"><i class="stage-dot done"></i>已结束</span>
+        <strong id="stage-done">0</strong>
+        <span class="stage-hint">完成或已收尾</span>
+      </button>
+    </section>
+
+    <section class="team" aria-label="项目与员工">
+      <div class="team-head">
+        <h2>项目与员工</h2>
+        <button class="primary small" id="add-worker" type="button">+ 新增员工</button>
+      </div>
+      <div class="project-list" id="project-list">
+        <p class="empty">正在读取员工…</p>
+      </div>
+    </section>
+
+    <section class="composer" aria-label="派发任务">
+      <div class="section-title">
+        <h2>派发任务</h2>
+        <span>任务会进入后台队列，DSH 不需要一直停留在这里</span>
+      </div>
+      <div class="template-bar">
+        <span class="template-label">模板</span>
+        <div class="template-chips" id="template-chips"></div>
+        <button class="link" id="save-template" type="button" hidden>+ 存为模板</button>
+      </div>
+      <textarea id="prompt" rows="4" placeholder="写清目标、范围、产物要求和验收标准。例如：阅读项目里的 xxx，整理一份 yyy 到 docs/..."></textarea>
+      <div class="composer-row">
+        <label class="field worker-field">
+          <span>派给</span>
+          <select id="worker-select"></select>
+        </label>
+        <label class="field grow">
+          <span>工作目录（默认跟员工走，可临时改）</span>
+          <input id="cwd" type="text" spellcheck="false" placeholder="C:\path\to\workspace">
+        </label>
+        <label class="field model-field">
+          <span id="model-label">模型（留空＝跟随路由）</span>
+          <input id="model" type="text" spellcheck="false" list="model-options" placeholder="默认">
+        </label>
+        <datalist id="model-options"></datalist>
+        <label class="check" title="勾上＝这次不带上次的对话记忆，从头开始。不勾＝接着这个员工在这个目录下的上一次对话继续说。">
+          <input id="new-session" type="checkbox">
+          <span>清空记忆</span>
+        </label>
+        <button class="primary" id="dispatch">派发任务</button>
+      </div>
+      <p class="form-note" id="form-note"></p>
+    </section>
+
+    <main class="workspace">
+      <section class="task-column" aria-label="任务列表">
+        <div class="list-head">
+          <h2>任务<span class="scope" id="list-scope">全部</span></h2>
+          <button class="ghost small hidden" id="clear-filter" type="button">看全部</button>
+        </div>
+        <div class="task-list" id="task-list">
+          <p class="empty">还没有任务</p>
+        </div>
+      </section>
+
+      <section class="detail-column" aria-label="任务详情">
+        <div id="detail-empty" class="detail-empty">
+          <div class="empty-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4 6.5h16M4 12h11M4 17.5h8"/></svg>
+          </div>
+          <h2>选一个任务看结果</h2>
+          <p>左边是任务队列，右边会显示输入、执行进度和员工的最终回报。</p>
+        </div>
+        <article id="detail" class="detail hidden">
+          <div class="detail-head">
+            <div>
+              <div class="detail-eyebrow"><span id="detail-status" class="status">状态</span><span id="detail-id"></span></div>
+              <h2 id="detail-title"></h2>
+            </div>
+            <div class="detail-actions">
+              <button class="ghost" id="retry-task" hidden>重新派发</button>
+              <button class="ghost" id="ack-task" hidden>已处理</button>
+              <button class="ghost" id="copy-result" hidden>复制结果</button>
+              <button class="danger" id="stop-task" hidden>停止任务</button>
+            </div>
+          </div>
+          <div class="meta-grid">
+            <div><span>员工</span><strong id="meta-worker"></strong></div>
+            <div><span>开始</span><strong id="meta-started"></strong></div>
+            <div><span>耗时</span><strong id="meta-duration"></strong></div>
+            <div><span>尝试</span><strong id="meta-attempts"></strong></div>
+            <div><span>会话</span><strong id="meta-session"></strong></div>
+          </div>
+          <div class="path-line">
+            <span>工作区</span>
+            <code id="meta-cwd">—</code>
+            <button class="link" id="open-cwd" type="button">打开目录</button>
+          </div>
+          <div class="usage-box" id="usage-box" hidden>
+            <span class="usage-label">本次用量</span>
+            <p class="usage-text" id="usage-text"></p>
+            <p class="usage-note" id="usage-note"></p>
+          </div>
+          <div class="detail-block">
+            <h3>派发的任务</h3>
+            <pre id="detail-prompt" class="prompt-box"></pre>
+          </div>
+          <div class="detail-block">
+            <h3>执行进度</h3>
+            <ol class="progress-list" id="progress-list"></ol>
+          </div>
+          <div class="detail-block" id="result-block" hidden>
+            <h3>员工回报</h3>
+            <pre id="detail-result" class="result-box"></pre>
+          </div>
+          <div class="detail-block error-block" id="error-block" hidden>
+            <h3>错误</h3>
+            <pre id="detail-error"></pre>
+          </div>
+          <details class="log-block">
+            <summary>原始日志</summary>
+            <pre id="detail-log"></pre>
+          </details>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <div class="overlay hidden" id="worker-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="worker-modal-title">新增员工</h2>
+        <button class="icon-button" id="w-cancel" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="form-grid">
+        <label class="field">
+          <span>名字</span>
+          <input id="w-name" type="text" placeholder="例如：小红书文案">
+        </label>
+        <label class="field">
+          <span>类型</span>
+          <select id="w-kind"></select>
+        </label>
+        <label class="field full">
+          <span>项目目录（它在哪里干活）</span>
+          <div class="path-row">
+            <input id="w-cwd" type="text" spellcheck="false" placeholder="C:\项目\xxx 或 E:\项目\xxx">
+            <button class="ghost" id="w-browse" type="button">选择目录</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>权限</span>
+          <select id="w-perm"></select>
+          <small id="w-perm-hint"></small>
+        </label>
+        <label class="field">
+          <span>失败自动重试次数</span>
+          <input id="w-retry" type="number" min="0" max="10" step="1" value="3">
+        </label>
+        <label class="field" id="w-budget-field">
+          <span>单任务花费上限（美元，留空＝不限）</span>
+          <input id="w-budget" type="number" min="0" step="0.5" placeholder="不限">
+          <small id="w-budget-hint"></small>
+        </label>
+        <label class="field">
+          <span id="w-model-label">模型（留空＝跟随路由）</span>
+          <input id="w-model" type="text" spellcheck="false" list="w-model-options" placeholder="默认">
+        </label>
+        <datalist id="w-model-options"></datalist>
+        <label class="field full">
+          <span>附加目录（可留空，多个用分号隔开，例如素材在 C 盘）</span>
+          <input id="w-extra" type="text" spellcheck="false" placeholder="C:\素材;D:\参考">
+        </label>
+        <details class="advanced full">
+          <summary>高级：启动方式（一般不用碰）</summary>
+          <label class="field full">
+            <span>启动命令</span>
+            <input id="w-command" type="text" spellcheck="false" placeholder="默认同类员工已配好的命令">
+          </label>
+          <p class="advanced-note" id="w-launch-hint"></p>
+        </details>
+        <label class="field full">
+          <span>备注（可留空，会显示在卡片上）</span>
+          <input id="w-note" type="text" placeholder="例如：只负责文案，不改代码">
+        </label>
+      </div>
+      <p class="modal-note" id="w-msg"></p>
+      <div class="modal-actions">
+        <button class="ghost" id="w-delete" type="button" hidden>删除这个员工</button>
+        <span class="spacer"></span>
+        <button class="ghost" id="w-cancel-2" type="button">取消</button>
+        <button class="primary" id="w-save" type="button">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="dir-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>选择项目目录</h2>
+        <button class="icon-button" id="dir-cancel" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="drive-row" id="dir-drives"></div>
+      <div class="dir-path" id="dir-path">—</div>
+      <div class="dir-list" id="dir-list"></div>
+      <div class="new-folder">
+        <input id="dir-new-name" type="text" placeholder="在这里新建文件夹，输入名字">
+        <button class="ghost" id="dir-new" type="button">新建</button>
+      </div>
+      <p class="modal-note" id="dir-msg"></p>
+      <div class="modal-actions">
+        <button class="ghost" id="dir-up" type="button">上一级</button>
+        <span class="spacer"></span>
+        <button class="ghost" id="dir-cancel-2" type="button">取消</button>
+        <button class="primary" id="dir-choose" type="button">用这个目录</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

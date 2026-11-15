@@ -1,0 +1,43 @@
+{
+  "name": "@local/dsh-agent-hub",
+  "version": "0.6.0",
+  "private": true,
+  "description": "DSH 主控、独立本地 Hub、Claude / Codex CLI 员工的本地多 Agent 调度闭环",
+  "type": "module",
+  "main": "./plugin/index.mjs",
+  "exports": {
+    ".": "./plugin/index.mjs",
+    "./client": "./plugin/client.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "plugin",
+    "src",
+    "public",
+    "config/workers.example.json",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "start": "node src/server.mjs",
+    "dev": "node --watch src/server.mjs",
+    "test": "node --test --test-concurrency=1 test/hub.test.mjs test/server.test.mjs test/workers.test.mjs test/models.test.mjs test/session.test.mjs test/usage.test.mjs test/log-usage.test.mjs test/templates.test.mjs",
+    "check": "node --check src/server.mjs && node --check src/hub.mjs && node --check src/store.mjs && node --check src/fsutil.mjs && node --check src/models.mjs && node --check src/usage.mjs && node --check src/log-usage.mjs && node --check src/workers-store.mjs && node --check src/templates-store.mjs && node --check src/adapters/shared.mjs && node --check src/adapters/index.mjs && node --check src/adapters/claude.mjs && node --check src/adapters/codex.mjs && node --check src/adapters/agy.mjs && node --check plugin/index.mjs && node --check public/app.js"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,17 @@
+node_modules/
+
+# 运行时数据：任务记录、日志、员工真实配置，不进仓库
+data/*
+!data/.gitignore
+
+# 本机专用配置（含绝对路径），只提交 example 版
+config/workers.json
+cordis.local.yml
+
+# 与项目无关的临时脚本
+tools/analyze-kernel-dump.py
+
+*.log
+*.dmp
+.DS_Store
+Thumbs.db
