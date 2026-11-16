@@ -850,3 +850,122 @@ test("subscribe 只在 status/stage 变化时回调", () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+// ── TG 里选员工（0.8.0）──────────────────────────────────────────────────
+
+const FOUR_WORKERS = [
+  { id: "claude-main", name: "Claude 主员工", note: "总经理", cwd: "C:\\work\\main", enabled: true, available: true },
+  { id: "codex-main", name: "Codex 员工", note: "审核", cwd: "C:\\work\\main", enabled: true, available: true },
+  { id: "claude-2", name: "抖音下载开发", note: "抖音下载插件开发", cwd: "E:\\workPM\\抖音下载开发", enabled: true, available: true },
+  { id: "claude-1", name: "便签重构员", note: "", cwd: "C:\\work\\scratchpad", enabled: true, available: true },
+];
+
+test("选员工：只有 @ 才认作点名，裸数字仍是正文；/员工 是新命令", () => {
+  const byIndex = parseIntent("/派 @3 整理 README", { tasks: [] });
+  assert.equal(byIndex.kind, "dispatch");
+  assert.equal(byIndex.workerSelector, "3");
+  assert.equal(byIndex.text, "整理 README");
+
+  const byName = parseIntent("/派 @抖音 下载封面", { tasks: [] });
+  assert.equal(byName.workerSelector, "抖音");
+  assert.equal(byName.text, "下载封面");
+
+  const plain = parseIntent("/派 2 个文件里的错字", { tasks: [] });
+  assert.equal(plain.workerSelector, undefined, "裸数字绝不能被吞掉");
+  assert.equal(plain.text, "2 个文件里的错字");
+
+  const onlySelector = parseIntent("/派 @2", { tasks: [] });
+  assert.equal(onlySelector.workerSelector, "2");
+  assert.equal(onlySelector.text, "");
+
+  assert.equal(parseIntent("/员工", {}).kind, "workers");
+  assert.equal(parseIntent("/员工列表", {}).kind, "workers");
+  assert.equal(parseIntent("/workers", {}).kind, "workers");
+});
+
+test("选员工：/员工 列编号、职责、目录，★ 标当前默认", async () => {
+  const ctx = makeRouter({ hubOptions: { workers: FOUR_WORKERS } });
+  try {
+    ctx.configStore.upsertBinding("telegram", { chatId: "tg:1", workerId: "claude-main" });
+    await ctx.router.handle({ channelId: "telegram", chatId: "tg:1", text: "/员工" });
+    const reply = ctx.texts().at(-1);
+    assert.match(reply, /现在有 4 个员工/);
+    assert.match(reply, /★ 1\. Claude 主员工/);
+    assert.match(reply, /3\. 抖音下载开发/);
+    assert.match(reply, /总经理/);
+    assert.match(reply, /E:\\workPM/);
+    assert.match(reply, /\/派 @3/);
+    assert.match(reply, /\/换 3/);
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test("选员工：/派 @3 临时点名，不改默认、不沿用会话目录", async () => {
+  const ctx = makeRouter({ hubOptions: { workers: FOUR_WORKERS } });
+  try {
+    ctx.configStore.upsertBinding("telegram", {
+      chatId: "tg:1", workerId: "claude-main", cwd: "C:\\work\\main",
+    });
+    await ctx.router.handle({ channelId: "telegram", chatId: "tg:1", text: "/派 @3 整理素材" });
+    assert.equal(ctx.hub.calls.dispatch.length, 1);
+    assert.equal(ctx.hub.calls.dispatch[0].workerId, "claude-2");
+    assert.equal(ctx.hub.calls.dispatch[0].cwd, undefined, "临时点名不能带上默认员工的目录");
+    assert.equal(ctx.configStore.findBinding("tg:1").entry.workerId, "claude-main", "默认不能被改掉");
+    const reply = ctx.texts().at(-1);
+    assert.match(reply, /抖音下载开发/);
+    assert.match(reply, /临时指定/);
+    assert.match(reply, /默认还是/);
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test("选员工：@名字 / @职责 模糊匹配；点错编号和空任务都不产生任务", async () => {
+  const ctx = makeRouter({ hubOptions: { workers: FOUR_WORKERS } });
+  try {
+    ctx.configStore.upsertBinding("telegram", { chatId: "tg:1", workerId: "claude-main" });
+
+    await ctx.router.handle({ channelId: "telegram", chatId: "tg:1", text: "/派 @便签 重构列表" });
+    assert.equal(ctx.hub.calls.dispatch[0].workerId, "claude-1");
+    assert.equal(ctx.hub.calls.dispatch[0].cwd, undefined);
+
+    await ctx.router.handle({ channelId: "telegram", chatId: "tg:1", text: "/派 @审核 检查一遍" });
+    assert.equal(ctx.hub.calls.dispatch[1].workerId, "codex-main", "职责备注也要能点名");
+    const goodCount = ctx.hub.calls.dispatch.length;
+
+    await ctx.router.handle({ channelId: "telegram", chatId: "tg:1", text: "/派 @99 干活" });
+    assert.equal(ctx.hub.calls.dispatch.length, goodCount, "编号不存在不能派给默认员工");
+    assert.match(ctx.texts().at(-1), /没找到/);
+    assert.match(ctx.texts().at(-1), /\/员工/);
+
+    await ctx.router.handle({ channelId: "telegram", chatId: "tg:1", text: "/派 @2" });
+    assert.equal(ctx.hub.calls.dispatch.length, goodCount, "只点名没内容不能派活");
+    assert.match(ctx.texts().at(-1), /还没写要干什么/);
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test("选员工：/换 3 改默认，工作目录跟着员工走，不串项目", async () => {
+  const ctx = makeRouter({ hubOptions: { workers: FOUR_WORKERS } });
+  try {
+    ctx.configStore.upsertBinding("telegram", {
+      chatId: "tg:1", workerId: "claude-main", cwd: "C:\\work\\main",
+    });
+    await ctx.router.handle({ channelId: "telegram", chatId: "tg:1", text: "/换 3" });
+    const entry = ctx.configStore.findBinding("tg:1").entry;
+    assert.equal(entry.workerId, "claude-2");
+    assert.equal(entry.cwd, "E:\\workPM\\抖音下载开发", "不能沿用上一个员工的目录");
+    assert.match(ctx.texts().at(-1), /以后这个会话派给/);
+    assert.match(ctx.texts().at(-1), /工作目录已跟着改/);
+
+    // 换完之后不带 @ 派活，就该用 3 号自己的目录。
+    await ctx.router.handle({ channelId: "telegram", chatId: "tg:1", text: "/派 继续整理" });
+    assert.equal(ctx.hub.calls.dispatch[0].workerId, "claude-2");
+    assert.equal(ctx.hub.calls.dispatch[0].cwd, "E:\\workPM\\抖音下载开发");
+    assert.doesNotMatch(ctx.texts().at(-1), /临时指定/, "不带 @ 就不该说是临时指定");
+  } finally {
+    ctx.cleanup();
+  }
+});

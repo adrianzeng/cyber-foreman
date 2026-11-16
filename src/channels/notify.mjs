@@ -50,9 +50,12 @@ export function split(text, limit = DEFAULT_SEGMENT_LIMIT, maxParts = DEFAULT_MA
 }
 
 /** 派活回执：必须让人一眼看到"派给谁、什么事、怎么查"。 */
-export function receipt(task, workerName) {
+export function receipt(task, workerName, options = {}) {
   const who = workerName || task?.workerId || "默认员工";
-  return `收到，已派给「${who}」｜${clip(task?.title || "任务", 60)}（${shortId(task?.id)}）。跑完我推给你，中途想加要求直接说话就行。`;
+  const base = `收到，已派给「${who}」｜${clip(task?.title || "任务", 60)}（${shortId(task?.id)}）。跑完我推给你，中途想加要求直接说话就行。`;
+  // 临时点名时一定要说清"只这一次"，否则用户会以为默认员工被换了。
+  if (!options?.picked) return base;
+  return `${base}\n这次是临时指定，会话默认还是「${options.defaultName || "默认员工"}」；下次不带 @ 就派给它。`;
 }
 
 /** 插话回执；warning 是预算提醒，必须原样带上。 */
@@ -208,7 +211,9 @@ export function ambiguous(candidates, options = {}) {
 export function help() {
   return [
     "能做的事：",
-    "/派 任务内容      派一个新任务",
+    "/派 任务内容      派一个新任务（给当前默认员工）",
+    "/派 @2 任务内容   临时派给 2 号，不改默认",
+    "/员工             列员工编号、职责、工作目录",
     "/插 2 内容        给正在跑的第 2 个任务插话",
     "/问 内容          侧问：只读地回答问题，不动正在跑的任务",
     "/任务             列最近任务（带编号）",
@@ -217,26 +222,71 @@ export function help() {
     "/重派 2           重新派发第 2 个任务",
     "/处理 2           把第 2 个任务标记为已处理",
     "/状态             看队列、等待、已结束的数量",
-    "/换 员工名        这个会话改派给别的员工",
+    "/换 2            这个会话改派给 2 号（也能打名字）",
     "/清空             下次派活用全新会话（再发一次撤销）",
     "/绑定 123456      用面板生成的配对码绑定这个会话",
     "/帮               看这段说明",
     "",
     "任务在跑的时候，直接说一句话就会当成插话；想另开新任务要写 /派。",
+    "临时点名用 @编号，工作目录跟着那个员工走，不会串到别的项目。",
   ].join("\n");
 }
 
-export function switchHint(workerName) {
-  return `现在派给「${workerName}」。要换发 /换 员工名。`;
+/** 员工清单：编号是给手机用的，★ 是「这个会话现在派给谁」。 */
+export function workersList(workers, options = {}) {
+  const list = Array.isArray(workers) ? workers : [];
+  if (!list.length) return "还没有员工。先去面板里加一个，再回来用 /派 派活。";
+  const effective = options.currentId
+    || options.defaultId
+    || list.find((worker) => worker.enabled !== false)?.id
+    || null;
+  const lines = list.map((worker, index) => {
+    const mark = worker.id === effective ? "★" : " ";
+    const note = worker.note ? `｜${clip(worker.note, 24)}` : "";
+    const dir = worker.cwd ? `｜${clip(worker.cwd, 52)}` : "｜（没设目录）";
+    const state = worker.enabled === false
+      ? "｜已停用"
+      : worker.available === false ? "｜命令找不到" : "";
+    return `${mark} ${index + 1}. ${clip(worker.name, 24)}${note}${dir}${state}`;
+  });
+  return [
+    `现在有 ${list.length} 个员工（★ = 这个会话现在派给谁）：`,
+    ...lines,
+    "",
+    "临时派一件给别的员工：/派 @3 任务内容",
+    "改这个会话的默认：/换 3（也可以打名字）",
+    "临时点名时，工作目录用那个员工自己的，不会串到别的项目。",
+  ].join("\n");
+}
+
+/** 点名点错了：必须给编号和下一步，不能静默。 */
+export function workerNotFound(selector, workers) {
+  const names = (workers || []).map((worker, index) => `${index + 1}.${worker.name}`).join("、");
+  return `没找到「${selector}」对应的员工。发 /员工 看编号和名字。现有：${names || "（还没有员工，去面板加一个）"}`;
+}
+
+export function workerUnavailable(worker) {
+  return `「${worker?.name || "这个员工"}」现在不可用（停用，或者命令找不到）。先去面板修好，或发 /员工 换一个。`;
+}
+
+export function dispatchWorkerNoText(selector) {
+  return `选了「${selector}」，但还没写要干什么。格式：/派 @${selector} 任务内容`;
+}
+
+export function switchHint(workerName, workers) {
+  const count = Array.isArray(workers) ? workers.length : 0;
+  return `现在派给「${workerName}」。要换发 /换 编号 或 /换 员工名；共 ${count} 个员工，发 /员工 看清单。`;
 }
 
 export function switched(found) {
-  return `以后这个会话派给「${found.name}」。`;
+  // 换人必须连工作目录一起换：不然新员工会在上一个员工的项目目录里干活。
+  const dir = found?.cwd ? `\n工作目录已跟着改成它自己的：${clip(found.cwd, 60)}` : "";
+  return `以后这个会话派给「${found.name}」。${dir}`;
 }
 
 export function switchNotFound(name, workers) {
-  const names = (workers || []).map((worker) => worker.name).join("、");
-  return `没有叫「${name}」的员工。现有：${names || "（还没有员工，去面板加一个）"}`;
+  const names = (workers || []).map((worker, index) => `${index + 1}.${worker.name}`).join("、");
+  return `没有叫「${name}」的员工。发 /员工 看编号。现有：${names || "（还没有员工，去面板加一个）"}`;
 }
 
 export function switchDisabled(found) {

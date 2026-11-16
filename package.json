@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-agent-hub",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "description": "DSH 主控、独立本地 Hub、Claude / Codex CLI 员工的本地多 Agent 调度闭环，可用手机 IM 遥控",
   "type": "module",

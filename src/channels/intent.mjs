@@ -37,6 +37,10 @@ const COMMAND_ALIASES = new Map([
   ["ack", "ack"],
   ["状态", "status"],
   ["status", "status"],
+  ["员工", "workers"],
+  ["员工列表", "workers"],
+  ["workers", "workers"],
+  ["who", "workers"],
   ["换", "switch"],
   ["切换", "switch"],
   ["switch", "switch"],
@@ -88,9 +92,15 @@ function parseTarget(rest, ctx) {
 
 function argsFor(kind, rest, ctx) {
   switch (kind) {
-    case "dispatch":
-      // 任务内容里可能以数字开头（「2 个文件…」），所以绝不在这里吃编号。
-      return { text: String(rest || "").trim() };
+    case "dispatch": {
+      const raw = String(rest || "").trim();
+      // 只有 @ 开头才认作员工选择器。任务内容里可能以数字开头（「2 个文件…」），
+      // 所以裸数字一律不吃；加个 @ 才不会把正文吞掉。
+      // 例：/派 @2 整理 README → 给 2 号；/派 2 个文件里的错字 → 正文原样。
+      const match = /^@([^\s@]+)(?:\s+([\s\S]+))?$/.exec(raw);
+      if (!match) return { text: raw };
+      return { text: String(match[2] || "").trim(), workerSelector: match[1] };
+    }
     case "steer": {
       const target = parseTarget(rest, ctx);
       return {

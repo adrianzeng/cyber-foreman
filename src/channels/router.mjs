@@ -108,6 +108,9 @@ export class MessageRouter {
       case "status":
         await this.reply(channelId, chatId, text.statusLine(this.store?.counts?.() || null));
         return;
+      case "workers":
+        await this.reply(channelId, chatId, this.workersText(binding));
+        return;
       case "list":
         await this.reply(channelId, chatId, this.listText(chatId));
         return;
@@ -247,6 +250,12 @@ export class MessageRouter {
 
   async dispatchTask(channelId, chatId, binding, intent, msg) {
     const prompt = String(intent.text || "").trim();
+    const selector = intent.workerSelector ? String(intent.workerSelector).trim() : "";
+
+    if (selector && !prompt) {
+      await this.reply(channelId, chatId, text.dispatchWorkerNoText(selector));
+      return;
+    }
     if (!prompt) {
       await this.reply(channelId, chatId, text.dispatchEmpty());
       return;
@@ -256,12 +265,28 @@ export class MessageRouter {
       return;
     }
 
+    // 临时点名：编号 / id / 名字都能选；点错了要说清，绝不悄悄派给默认员工。
+    let picked = null;
+    if (selector) {
+      picked = this.resolveWorker(selector);
+      if (!picked) {
+        await this.reply(channelId, chatId, text.workerNotFound(selector, this.workerList()));
+        return;
+      }
+      if (picked.enabled === false || picked.available === false) {
+        await this.reply(channelId, chatId, text.workerUnavailable(picked));
+        return;
+      }
+    }
+
     let task;
     try {
       task = this.hub.dispatch({
-        workerId: binding.entry.workerId || undefined,
+        workerId: picked?.id || binding.entry.workerId || undefined,
         prompt,
-        cwd: binding.entry.cwd || undefined,
+        // 临时点名时绝不沿用会话目录：4 个员工各绑不同项目，混用会串项目。
+        // cwd 不传，Hub 就会用这个员工自己配置里的目录。
+        cwd: picked ? undefined : (binding.entry.cwd || undefined),
         newSession: binding.entry.newSession === true,
       });
     } catch (error) {
@@ -279,7 +304,12 @@ export class MessageRouter {
       lastNotifiedStatus: task.status || "queued",
     });
 
-    await this.reply(channelId, chatId, text.receipt(task, this.workerName(task.workerId)));
+    const defaultId = binding.entry.workerId
+      || (typeof this.hub.defaultWorkerId === "function" ? this.hub.defaultWorkerId() : null);
+    await this.reply(channelId, chatId, text.receipt(task, this.workerName(task.workerId), {
+      picked: picked ? picked.name : null,
+      defaultName: this.workerName(defaultId),
+    }));
   }
 
   /**
@@ -470,16 +500,58 @@ export class MessageRouter {
     }
   }
 
+  // ── 选员工 ──────────────────────────────────────────────────────────────
+
+  workerList() {
+    return typeof this.hub.listWorkers === "function" ? this.hub.listWorkers() : [];
+  }
+
+  /**
+   * 编号最省事（手机上打 /派 @3 就行），也支持 id 和名字的模糊匹配。
+   * 顺序固定 = /员工 里列出来的顺序，两边编号必须对得上。
+   */
+  resolveWorker(selector) {
+    const key = String(selector || "").trim().replace(/^@/, "");
+    if (!key) return null;
+    const workers = this.workerList();
+    if (/^\d{1,3}$/.test(key)) return workers[Number(key) - 1] || null;
+    const norm = (value) => String(value ?? "").toLowerCase().replace(/\s+/g, "");
+    const needle = norm(key);
+    return workers.find((worker) => norm(worker.id) === needle)
+      || workers.find((worker) => norm(worker.name) === needle)
+      // /员工 里会显示职责备注，用户自然会照着喊「@总经理」「@审核」。
+      || workers.find((worker) => norm(worker.note) === needle)
+      || workers.find((worker) => (
+        norm(worker.name).includes(needle)
+        || norm(worker.id).includes(needle)
+        || norm(worker.note).includes(needle)
+      ))
+      || null;
+  }
+
+  workersText(binding) {
+    const defaultId = typeof this.hub.defaultWorkerId === "function" ? this.hub.defaultWorkerId() : null;
+    return text.workersList(this.workerList(), {
+      currentId: binding.entry.workerId || null,
+      defaultId,
+    });
+  }
+
   switchText(binding, intent) {
-    const name = String(intent.workerName || "").trim();
+    const key = String(intent.workerName || "").trim();
+    const workers = this.workerList();
     const current = this.workerName(binding.entry.workerId);
-    if (!name) return text.switchHint(current);
-    const workers = this.hub.listWorkers ? this.hub.listWorkers() : [];
-    const found = workers.find((worker) => worker.id === name)
-      || workers.find((worker) => worker.name === name);
-    if (!found) return text.switchNotFound(name, workers);
+    if (!key) return text.switchHint(current, workers);
+    const found = this.resolveWorker(key);
+    if (!found) return text.switchNotFound(key, workers);
     if (found.enabled === false) return text.switchDisabled(found);
-    this.configStore.upsertBinding(binding.channelId, { ...binding.entry, workerId: found.id });
+    if (found.available === false) return text.workerUnavailable(found);
+    // 换人必须连工作目录一起换：不沿用上一个员工（或 defaults）的目录，否则串项目。
+    this.configStore.upsertBinding(binding.channelId, {
+      ...binding.entry,
+      workerId: found.id,
+      cwd: found.cwd || null,
+    });
     return text.switched(found);
   }
 
