@@ -88,6 +88,9 @@ export default {
   transport: "stream-json",
   supportsResume: true,
   supportsExtraDirs: true,
+  /** 同 Codex：`-p <内容>` 是位置参数，一次性执行，没有持续输入入口。 */
+  supportsSteer: false,
+  steerHint: "反重力把任务当成 -p 的参数一次性执行，中途插不进话。想追加要求请用侧问（只读答疑），或 /停 后重新派。",
   commandHint: "C:\\Users\\你的用户名\\AppData\\Local\\agy\\bin\\agy.exe",
   defaultPermissionMode: "accept-edits",
   permissionModes: [

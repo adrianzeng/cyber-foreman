@@ -60,7 +60,9 @@ async function main() {
   console.log(`  ${RULE}`);
   console.log("");
 
-  const child = spawn(process.execPath, [join(ROOT, "src", "server.mjs")], {
+  // 走 0.7.0 的正式入口：参数、数据目录、端口、通道开关都由 config.mjs 统一解析，
+  // 和 `npx dsh-agent-hub` 是同一个启动路径，别再直连 src/server.mjs。
+  const child = spawn(process.execPath, [join(ROOT, "bin", "dsh-agent-hub.mjs")], {
     cwd: ROOT,
     stdio: "inherit",
     env: process.env,

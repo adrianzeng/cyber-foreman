@@ -1,19 +1,39 @@
 import { createServer } from "node:http";
 import { mkdirSync, readFileSync, existsSync } from "node:fs";
-import { dirname, extname, join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { TaskStore } from "./store.mjs";
 import { AgentHub } from "./hub.mjs";
 import { WorkerStore } from "./workers-store.mjs";
 import { TemplateStore } from "./templates-store.mjs";
 import { listAdapters } from "./adapters/index.mjs";
 import { isDirectory, listDirectories, listDrives, parentDirectory } from "./fsutil.mjs";
+import { DEFAULT_HOST, LOOPBACK_HOSTS, PROJECT_ROOT, isLoopbackHost, loadConfig } from "./config.mjs";
+import { pickPort } from "./cli-options.mjs";
+import { ChannelConfigStore } from "./channels/store.mjs";
+import { ChannelManager } from "./channels/index.mjs";
+import { maybeHandleChannels } from "./routes/channels.mjs";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-export const PROJECT_ROOT = resolve(HERE, "..");
+export { PROJECT_ROOT, loadConfig };
+
 const PUBLIC_ROOT = join(PROJECT_ROOT, "public");
 const BODY_LIMIT = 1024 * 1024;
+
+/**
+ * 静态资源白名单：只放行这几个固定名字。
+ * 不做目录遍历，是这套"本机面板"最简单的安全边界。
+ */
+const STATIC_FILES = new Set([
+  "index.html",
+  "app.js",
+  "styles.css",
+  "favicon.svg",
+  "panel-common.js",
+  "panel-workbench.js",
+  "panel-talk.js",
+  "panel-channels.js",
+]);
 
 const CONTENT_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -21,6 +41,23 @@ const CONTENT_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
   ".json": "application/json; charset=utf-8",
+};
+
+/**
+ * `/api/tasks/:id/say` 的错误码 → HTTP 状态。
+ * 前端按 code 做细分文案，按状态码做通用兜底，两边都不能缺。
+ */
+const SAY_STATUS = {
+  NO_TASK: 404,
+  NO_PARENT: 404,
+  STEER_UNSUPPORTED: 400,
+  STEER_NOT_RUNNING: 409,
+  SIDE_BUSY: 409,
+  STEER_EMPTY: 400,
+  QUESTION_EMPTY: 400,
+  STEER_TOO_LONG: 400,
+  WORKER_UNAVAILABLE: 503,
+  STEER_WRITE_FAILED: 500,
 };
 
 function json(response, status, value) {
@@ -44,25 +81,48 @@ function text(response, status, body, contentType = "text/plain; charset=utf-8")
   response.end(body);
 }
 
-function loopbackHost(header) {
-  if (!header) return false;
-  try {
-    const hostname = new URL(`http://${header}`).hostname.toLowerCase();
-    return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
-  } catch {
-    return false;
-  }
+function normalizeHostname(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\[/, "")
+    .replace(/\]$/, "");
 }
 
-function allowedOrigin(request) {
-  const origin = request.headers.origin;
-  if (!origin) return true;
+/**
+ * Host 头校验。
+ * 默认只认三个回环值（行为与 0.6.0 一致）；
+ * 配置了 allowedHosts 就按配置来；显式绑非回环地址时放开（横幅会警告）。
+ */
+function hostAllowed(header, config) {
+  if (!header) return false;
+  if (config.allowAnyHost) return true;
+  let hostname;
   try {
-    const hostname = new URL(origin).hostname.toLowerCase();
-    return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+    hostname = normalizeHostname(new URL(`http://${header}`).hostname);
   } catch {
     return false;
   }
+  const allowed = Array.isArray(config.allowedHosts) && config.allowedHosts.length
+    ? config.allowedHosts
+    : LOOPBACK_HOSTS;
+  return allowed.includes(hostname) || isLoopbackHost(hostname);
+}
+
+function allowedOrigin(request, config) {
+  const origin = request.headers.origin;
+  if (!origin) return true;
+  if (config.allowAnyHost) return true;
+  let hostname;
+  try {
+    hostname = normalizeHostname(new URL(origin).hostname);
+  } catch {
+    return false;
+  }
+  const allowed = Array.isArray(config.allowedHosts) && config.allowedHosts.length
+    ? config.allowedHosts
+    : LOOPBACK_HOSTS;
+  return allowed.includes(hostname) || isLoopbackHost(hostname);
 }
 
 async function readBody(request) {
@@ -83,6 +143,7 @@ async function readBody(request) {
 }
 
 function staticFile(response, fileName) {
+  if (!STATIC_FILES.has(fileName)) return false;
   const file = join(PUBLIC_ROOT, fileName);
   if (!existsSync(file)) return false;
   const body = readFileSync(file);
@@ -109,26 +170,13 @@ function openFolder(target) {
   }
 }
 
-export function loadConfig(configFile = process.env.AGENT_HUB_CONFIG || join(PROJECT_ROOT, "config", "workers.json")) {
-  const file = resolve(configFile);
-  let config;
-  try {
-    config = JSON.parse(readFileSync(file, "utf8"));
-  } catch (error) {
-    throw new Error(`读取配置失败 ${file}: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  // workers 只是首次安装的种子；真正在用的员工存在 data/workers.json 里。
-  const workers = config.workers && typeof config.workers === "object" ? config.workers : {};
-  return {
-    configFile: file,
-    port: Number(config.port || process.env.AGENT_HUB_PORT || 4647),
-    dataDir: resolve(PROJECT_ROOT, config.dataDir || "data"),
-    workers,
-  };
-}
-
+/**
+ * 装配一个 Hub（不监听端口）。
+ * 通道只在这里装配一次：ChannelConfigStore → ChannelManager → MessageRouter，
+ * 三者都是 in-process 直调，所以不受 loopback 校验和端口变更影响。
+ */
 export async function createHubServer(options = {}) {
-  const config = options.config || loadConfig(options.configFile);
+  const config = options.config || loadConfig(options);
   mkdirSync(config.dataDir, { recursive: true });
   const store = new TaskStore(config.dataDir).init();
   const workerStore = new WorkerStore({
@@ -138,13 +186,20 @@ export async function createHubServer(options = {}) {
   const templateStore = new TemplateStore(join(config.dataDir, "templates.json")).load();
   const hub = new AgentHub({ store, workers: workerStore.snapshot() });
 
+  const logger = options.logger || console;
+  const channelStore = new ChannelConfigStore(join(config.dataDir, "channels.json")).load();
+  const channelManager = new ChannelManager({ configStore: channelStore, hub, store, logger });
+  await channelManager.load();
+  const channelsEnabled = options.channels !== false && config.channelsEnabled !== false;
+  if (channelsEnabled) await channelManager.startEnabled();
+
   const server = createServer(async (request, response) => {
     try {
-      if (!loopbackHost(request.headers.host)) {
+      if (!hostAllowed(request.headers.host, config)) {
         json(response, 403, { error: "只接受本机访问" });
         return;
       }
-      if (!allowedOrigin(request)) {
+      if (!allowedOrigin(request, config)) {
         json(response, 403, { error: "不接受的请求来源" });
         return;
       }
@@ -157,13 +212,29 @@ export async function createHubServer(options = {}) {
         staticFile(response, "index.html");
         return;
       }
-      if (method === "GET" && ["/app.js", "/styles.css", "/favicon.svg"].includes(pathname)) {
+      if (method === "GET" && STATIC_FILES.has(pathname.slice(1)) && pathname.lastIndexOf("/") === 0) {
         staticFile(response, pathname.slice(1));
         return;
       }
 
+      // 通道接口：命中就返回，没命中继续走下面的 if 链。
+      if (await maybeHandleChannels({
+        request,
+        response,
+        method,
+        pathname,
+        url,
+        manager: channelManager,
+        configStore: channelStore,
+        readBody,
+        json,
+      })) {
+        return;
+      }
+
       if (method === "GET" && pathname === "/api/health") {
-        json(response, 200, hub.overview());
+        const overview = hub.overview();
+        json(response, 200, config.warning ? { ...overview, warning: config.warning } : overview);
         return;
       }
       if (method === "GET" && pathname === "/api/overview") {
@@ -304,11 +375,15 @@ export async function createHubServer(options = {}) {
       }
 
       if (method === "GET" && pathname === "/api/tasks") {
+        // 默认只列主任务：侧问是答疑产物，混进主列表会让任务流看起来很乱。
+        const roleParam = url.searchParams.get("role");
+        const role = roleParam === "side" ? "side" : roleParam === "all" ? null : "main";
         json(response, 200, {
           counts: store.counts(),
           tasks: store.listTasks({
             status: url.searchParams.get("status"),
             stage: url.searchParams.get("stage"),
+            role,
             limit: url.searchParams.get("limit"),
           }),
         });
@@ -326,6 +401,33 @@ export async function createHubServer(options = {}) {
         });
         json(response, 202, { task });
         return;
+      }
+
+      // 任务中对话：插话 / 侧问。策略（含 auto 降级）只在 Hub.say 里一份，
+      // 面板按 Enter 和 IM 无前缀消息都走这里，前端不做任何特判。
+      const sayMatch = /^\/api\/tasks\/([A-Za-z0-9_-]+)\/say$/.exec(pathname);
+      if (sayMatch && method === "POST") {
+        const id = sayMatch[1];
+        const body = await readBody(request);
+        const mode = ["auto", "steer", "side"].includes(body.mode) ? body.mode : "auto";
+        const say = String(body.text || "").trim();
+        try {
+          const result = await hub.say(id, say, { mode, source: "panel" });
+          json(response, 200, result);
+          return;
+        } catch (error) {
+          const status = SAY_STATUS[error?.code] || 400;
+          const message = error instanceof Error ? error.message : String(error);
+          // error 与 message 同值：前端读 message（可直接显示），老调用方读 error。
+          // 文案只在这里和后端错误里各一份，不给前端留"自己拼"的空间。
+          json(response, status, {
+            error: message,
+            message,
+            code: error?.code || "SAY_FAILED",
+            ...(error?.fallback ? { fallback: error.fallback } : {}),
+          });
+          return;
+        }
       }
 
       const match = /^\/api\/tasks\/([A-Za-z0-9_-]+)(\/stop|\/wait|\/retry|\/ack)?$/.exec(pathname);
@@ -367,35 +469,104 @@ export async function createHubServer(options = {}) {
     }
   });
 
-  return { server, hub, store, config, workerStore, templateStore };
+  return {
+    server,
+    hub,
+    store,
+    config,
+    workerStore,
+    templateStore,
+    channelStore,
+    channelManager,
+  };
 }
 
-export async function startFromConfig(configFile) {
-  const { server, hub, config } = await createHubServer({ configFile });
-  await new Promise((resolvePromise, reject) => {
-    server.once("error", reject);
-    server.listen(config.port, "127.0.0.1", resolvePromise);
+function listen(server, port, host) {
+  return new Promise((resolvePromise, reject) => {
+    const onError = (error) => reject(error);
+    server.once("error", onError);
+    server.listen(port, host, () => {
+      server.off("error", onError);
+      resolvePromise();
+    });
   });
-  const address = server.address();
-  const port = typeof address === "object" && address ? address.port : config.port;
-  console.log(`Agent Hub 已启动: http://127.0.0.1:${port}`);
+}
+
+/** 用户永远要知道自己的数据在哪、通道什么状态，所以横幅必须把这些打全。 */
+function printBanner(context, { host, port }) {
+  const { config, hub, channelManager } = context;
+  const version = hub.overview().version;
+  const wildcard = host === "0.0.0.0" || host === "::" || host === "";
+  const address = wildcard ? `http://127.0.0.1:${port}（本机；已对外开放）` : `http://${host}:${port}`;
+  console.log(`DSH Agent Hub v${version}`);
+  console.log(`地址: ${address}`);
+  console.log(`数据目录: ${config.dataDir}`);
   console.log(`配置文件: ${config.configFile}`);
   console.log(`员工配置: ${join(config.dataDir, "workers.json")}（面板改的就是这里）`);
-  console.log(`数据目录: ${config.dataDir}`);
+  const channels = channelManager.statusList()
+    .map((item) => `${item.label}${describeChannelState(item)}`)
+    .join(" · ");
+  if (channels) console.log(`通道: ${channels}`);
+  if (config.warning) console.log(`⚠ ${config.warning}`);
   console.log("按 Ctrl+C 停止");
+}
 
+function describeChannelState(item) {
+  if (item.implemented !== true) return `（${item.note || "暂不可用"}）`;
+  if (!item.enabled) return "（未启用）";
+  if (item.state === "running") return "（已连接）";
+  if (item.state === "starting") return "（连接中）";
+  if (item.state === "error") return `（出错：${item.lastError || "原因不明"}）`;
+  return "（未启动）";
+}
+
+function installShutdown(context) {
   let closing = false;
   const shutdown = async () => {
     if (closing) return;
     closing = true;
     console.log("\n正在停止 Hub...");
-    await hub.stopAll();
-    server.close(() => process.exit(0));
+    // 先停通道（不再收新消息），再停任务。
+    try {
+      await context.channelManager.stopAll();
+    } catch {
+      // 停通道失败也要继续停任务。
+    }
+    try {
+      await context.hub.stopAll();
+    } catch {
+      // 同上。
+    }
+    context.server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 5000).unref();
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
-  return { server, hub, config, port };
+  return shutdown;
+}
+
+/**
+ * 启动服务。端口/地址由调用方（bin 或 startFromConfig）算好传进来，
+ * 这样 `npx` 场景里"端口被占用自动 +1"的逻辑只写一份。
+ */
+export async function startServer(config, options = {}) {
+  const host = String(options.host || config.host || DEFAULT_HOST);
+  const port = options.port === undefined ? config.port : options.port;
+  const context = await createHubServer({ ...options, config });
+  await listen(context.server, port, host);
+  const address = context.server.address();
+  const actualPort = typeof address === "object" && address ? address.port : port;
+  if (options.banner !== false) printBanner(context, { host, port: actualPort });
+  installShutdown(context);
+  return { ...context, host, port: actualPort };
+}
+
+/** 兼容 `npm start` / `node src/server.mjs`：从配置文件装配并启动。 */
+export async function startFromConfig(configFile) {
+  const config = loadConfig({ configFile });
+  const port = await pickPort(config.port, { host: config.host });
+  if (port !== config.port) console.log(`端口 ${config.port} 被占用，改用 ${port}`);
+  return startServer(config, { port, host: config.host });
 }
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;

@@ -1,27 +1,36 @@
 {
   "name": "@local/dsh-agent-hub",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
-  "description": "DSH 主控、独立本地 Hub、Claude / Codex CLI 员工的本地多 Agent 调度闭环",
+  "description": "DSH 主控、独立本地 Hub、Claude / Codex CLI 员工的本地多 Agent 调度闭环，可用手机 IM 遥控",
   "type": "module",
   "main": "./plugin/index.mjs",
+  "bin": {
+    "dsh-agent-hub": "./bin/dsh-agent-hub.mjs"
+  },
   "exports": {
     ".": "./plugin/index.mjs",
     "./client": "./plugin/client.mjs",
     "./package.json": "./package.json"
   },
   "files": [
+    "bin",
     "plugin",
     "src",
     "public",
     "config/workers.example.json",
+    "config/channels.example.json",
     "cordis.patch.yml"
   ],
   "scripts": {
-    "start": "node src/server.mjs",
-    "dev": "node --watch src/server.mjs",
-    "test": "node --test --test-concurrency=1 test/hub.test.mjs test/server.test.mjs test/workers.test.mjs test/models.test.mjs test/session.test.mjs test/usage.test.mjs test/log-usage.test.mjs test/templates.test.mjs",
-    "check": "node --check src/server.mjs && node --check src/hub.mjs && node --check src/store.mjs && node --check src/fsutil.mjs && node --check src/models.mjs && node --check src/usage.mjs && node --check src/log-usage.mjs && node --check src/workers-store.mjs && node --check src/templates-store.mjs && node --check src/adapters/shared.mjs && node --check src/adapters/index.mjs && node --check src/adapters/claude.mjs && node --check src/adapters/codex.mjs && node --check src/adapters/agy.mjs && node --check plugin/index.mjs && node --check public/app.js"
+    "start": "node bin/dsh-agent-hub.mjs",
+    "dev": "node --watch bin/dsh-agent-hub.mjs",
+    "cli": "node bin/dsh-agent-hub.mjs",
+    "test": "node --test --test-concurrency=1 test/hub.test.mjs test/server.test.mjs test/workers.test.mjs test/models.test.mjs test/session.test.mjs test/usage.test.mjs test/log-usage.test.mjs test/templates.test.mjs test/channels.test.mjs test/cli-options.test.mjs test/host-guard.test.mjs test/telegram.test.mjs test/steer.test.mjs test/side.test.mjs test/feishu-normalize.test.mjs",
+    "check": "node --check src/server.mjs && node --check src/hub.mjs && node --check src/store.mjs && node --check src/fsutil.mjs && node --check src/models.mjs && node --check src/usage.mjs && node --check src/log-usage.mjs && node --check src/workers-store.mjs && node --check src/templates-store.mjs && node --check src/config.mjs && node --check src/cli-options.mjs && node --check src/routes/channels.mjs && node --check src/channels/index.mjs && node --check src/channels/base.mjs && node --check src/channels/store.mjs && node --check src/channels/secrets.mjs && node --check src/channels/intent.mjs && node --check src/channels/router.mjs && node --check src/channels/notify.mjs && node --check src/channels/telegram.mjs && node --check src/channels/wecom.mjs && node --check src/channels/wechat.mjs && node --check src/channels/feishu.mjs && node --check src/channels/feishu-normalize.mjs && node --check src/adapters/shared.mjs && node --check src/adapters/index.mjs && node --check src/adapters/claude.mjs && node --check src/adapters/codex.mjs && node --check src/adapters/agy.mjs && node --check bin/dsh-agent-hub.mjs && node --check plugin/index.mjs && node --check public/app.js && node --check public/panel-common.js && node --check public/panel-workbench.js && node --check public/panel-talk.js && node --check public/panel-channels.js"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.76.0"
   },
   "dsh": {
     "client": {

@@ -129,6 +129,19 @@ export function normalizeWorker(input, { id, all = {} } = {}) {
     if (retry.maxDelayMs < retry.baseDelayMs) retry.maxDelayMs = retry.baseDelayMs;
     worker.retry = retry;
   }
+  // 插话相关：只对"类型本身支持插话"的员工落盘，别的类型存了也没用，
+  // 反而会让面板长出一个永远点不动的开关。
+  if (adapter.supportsSteer === true && input.streamInput === true) {
+    worker.streamInput = true;
+  }
+  const steerIdleMs = Number(input.steerIdleMs);
+  if (adapter.supportsSteer === true && Number.isFinite(steerIdleMs) && steerIdleMs > 0) {
+    worker.steerIdleMs = clampInt(steerIdleMs, 3000, 500, 60_000);
+  }
+  const sideTimeoutMs = Number(input.sideTimeoutMs);
+  if (Number.isFinite(sideTimeoutMs) && sideTimeoutMs > 0) {
+    worker.sideTimeoutMs = clampInt(sideTimeoutMs, 180_000, 1_000, 900_000);
+  }
   if (kind === "codex-cli") worker.autoApprove = input.autoApprove !== false;
   if (input.env && typeof input.env === "object") worker.env = input.env;
 

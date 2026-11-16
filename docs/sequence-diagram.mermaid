@@ -1,0 +1,92 @@
+sequenceDiagram
+  autonumber
+  actor U as 手机用户
+  participant TG as Telegram Bot API
+  participant TC as TelegramChannel
+  participant CM as ChannelManager
+  participant MR as MessageRouter
+  participant CS as ChannelConfigStore
+  participant H as AgentHub
+  participant TS as TaskStore
+  participant MAIN as 主任务 CLI 进程
+  participant SIDE as 侧问进程(只读)
+
+  Note over TC: supervisor 起 pollLoop（不阻塞 HTTP）
+  TC->>TG: POST /bot{token}/getUpdates?offset&timeout=25
+  U->>TG: 发「/派 整理 README」
+  TG-->>TC: {update_id, message}
+  TC->>TC: 去重(update_id) + 组 InboundMessage
+  TC->>CM: onMessage(msg)
+  CM->>MR: handle(msg)
+
+  MR->>CS: isBound("tg:837465123")
+  alt 未绑定
+    CS-->>MR: false
+    MR->>TC: send("这个会话还没绑定…发 /绑定 6 位配对码")
+    TG-->>U: 绑定指引（不触碰 Hub）
+  else 已绑定
+    CS-->>MR: Binding{workerId, cwd, newSession}
+    MR->>MR: parseIntent → dispatch
+    MR->>H: dispatch({workerId, prompt, cwd})
+    H->>TS: createTask(role=main) 状态 queued
+    H->>H: pump(workerId)（异步，不阻塞）
+    H-->>MR: task{id, title}
+    MR->>CS: addDelivery({taskId, channelId, chatId, kind:"main"})
+    MR->>TC: send("收到，已派给 文案-1｜整理 README（task_…ab12cd）")
+    TG-->>U: 回执（约 200ms 内，不等结果）
+
+    par 长任务执行
+      H->>MAIN: spawn(claude …)
+      MAIN-->>H: stdout 逐行事件
+      H->>TS: addProgress（只落库，running 不推 IM）
+    and 用户中途插话（需求 C-1）
+      U->>TG: 无前缀文本「顺手把图也换掉」
+      TG-->>TC: update
+      TC->>TC: 600ms 合并窗口（同 chat 同 task 多条拼一条）
+      TC->>MR: handle(msg)
+      MR->>CS: 该会话唯一 running 任务？
+      CS-->>MR: task_…ab12cd（唯一）
+      MR->>H: steerTask(id, text, {source:"telegram"})
+      alt supportsSteer 且 worker.streamInput
+        H->>H: 校验 status=running + 进程存活
+        H->>MAIN: 写入一行 JSONL user 消息（串行链，不交错）
+        MAIN-->>H: 新一轮输出
+        H->>TS: task.steers.push + addSteer + progress + events.jsonl（attempts 不变）
+        H-->>MR: {delivered:"steer", warning:"已用 $3.2/$4.0…"}
+        MR->>TC: send("已插话给「整理 README」，按新要求继续（已用 $3.2/$4.0）")
+        TG-->>U: 插话回执
+      else 不支持（Codex / agy / 未开流式）
+        H-->>MR: 抛 STEER_UNSUPPORTED
+        MR->>H: askSide({parentTaskId, question})
+        H-->>MR: {task: side_…}
+        MR->>TC: send("Codex 不支持插话，已改为侧问，答好推给你；想改方向请 /停 后 /派")
+        TG-->>U: 降级说明（绝不静默）
+      end
+    and 用户侧问（需求 C-2）
+      U->>TG: "/问 这个仓库的构建命令是什么"
+      TG-->>TC: update
+      TC->>MR: handle(msg)
+      MR->>H: askSide({parentTaskId, question})
+      H->>H: 检查 activeSideByWorker（每员工 1 个）
+      H->>TS: createTask(role="side", newSession, readOnly)
+      H->>SIDE: spawn(plan / read-only)
+      Note over H,SIDE: 不占 activeByWorker → 主任务继续跑；不写 setWorkerSession → 不冲掉主任务记忆
+      SIDE-->>H: 答案
+      H->>TS: updateTask(completed) + 事件
+      TS-->>MR: 事件 completed(role=side)
+      MR->>TC: send("侧问答案：…（不影响正在跑的任务）")
+      TG-->>U: 答案
+    end
+
+    Note over MAIN: 收到 result 且空闲 3 秒无新插话 → stdin.end() → 进程正常退出
+    MAIN-->>H: close（done 契约不变）
+    H->>TS: updateTask(completed) + usage
+    TS-->>CM: 事件 {status:"completed", stage:"done"}
+    CM->>MR: onTaskEvent(event)
+    MR->>CS: deliveriesFor(taskId)
+    MR->>H: taskDetail(taskId)
+    H-->>MR: {result, usage, startedAt, finishedAt}
+    MR->>TC: send(第1段) / send(第2段)（≤3 段，节流 1 条/秒，429 按 retry_after）
+    TG-->>U: 结果推送
+    MR->>CS: recordDelivery(taskId, {pushedAt, lastNotifiedStatus:"completed"})
+  end

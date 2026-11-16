@@ -110,6 +110,10 @@ export class TaskStore {
     this.stateFile = join(dataDir, "state.json");
     this.tasks = new Map();
     this.state = { sessions: {} };
+    /** 任务事件订阅者（通道层用）。 */
+    this.listeners = new Set();
+    /** 每个任务上次通知出去的 `status|stage`，用来判重。 */
+    this.notified = new Map();
   }
 
   init() {
@@ -136,6 +140,8 @@ export class TaskStore {
       }
       this.tasks.set(task.id, task);
     }
+    // 历史任务先记下当前签名，别让"进度更新"被当成状态变化推出去。
+    for (const task of this.tasks.values()) this.notified.set(task.id, this.#signature(task));
     this.#migrateSessions();
     return this;
   }
@@ -148,6 +154,55 @@ export class TaskStore {
     task.updatedAt = nowIso();
     writeJsonAtomic(this.#taskFile(task.id), task);
     this.tasks.set(task.id, task);
+    this.#emit(task);
+  }
+
+  #signature(task) {
+    return `${task.status}|${stageOf(task)}`;
+  }
+
+  /**
+   * 任务事件唯一出口。
+   *
+   * 只有 status 或 stage 变了才回调 —— 进度更新一次就推一次 IM 会把人烦死，
+   * 通道层只需要知道「进终态了」「第一次进等你了」。
+   * 单个订阅者抛错绝不影响落盘：通道挂了不能让任务记录写不进去。
+   */
+  #emit(task) {
+    const signature = this.#signature(task);
+    const changed = this.notified.get(task.id) !== signature;
+    this.notified.set(task.id, signature);
+    if (!changed || !this.listeners.size) return;
+    const event = {
+      type: "task",
+      taskId: task.id,
+      workerId: task.workerId,
+      role: task.role || "main",
+      status: task.status,
+      stage: stageOf(task),
+      title: task.title,
+      at: nowIso(),
+    };
+    for (const listener of [...this.listeners]) {
+      try {
+        const result = listener(event);
+        if (result && typeof result.catch === "function") result.catch(() => {});
+      } catch {
+        // 订阅者自己的问题，不影响任务。
+      }
+    }
+  }
+
+  /**
+   * 订阅任务状态事件。
+   * @param {(event:{type:string, taskId:string, workerId:string, role:string,
+   *   status:string, stage:string, title:string, at:string}) => void} listener
+   * @returns {() => void} 取消订阅
+   */
+  subscribe(listener) {
+    if (typeof listener !== "function") return () => {};
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   #event(taskIdValue, type, data = {}) {
@@ -160,6 +215,7 @@ export class TaskStore {
 
   createTask(input) {
     const time = nowIso();
+    const role = input.role === "side" ? "side" : "main";
     const task = {
       id: taskId(),
       workerId: input.workerId,
@@ -190,9 +246,19 @@ export class TaskStore {
       nextRetryAt: null,
       acknowledgedAt: null,
       progress: [],
+      /** 主任务 / 侧问。旧任务没有这个字段，一律按 main 处理。 */
+      role,
+      parentTaskId: input.parentTaskId || null,
+      /** 插话记录（最多 50 条 FIFO），面板右栏的对话气泡就靠它。 */
+      steers: [],
+      steerCount: 0,
+      lastSteerAt: null,
+      sideQuestion: input.sideQuestion || null,
+      /** 侧问为 true：adapter 据此降到只读权限。 */
+      readOnly: input.readOnly === true,
     };
     this.#save(task);
-    this.#event(task.id, "queued", { workerId: task.workerId });
+    this.#event(task.id, "queued", { workerId: task.workerId, role });
     return this.clone(task);
   }
 
@@ -221,6 +287,39 @@ export class TaskStore {
     }
     this.#save(task);
     this.#event(id, type, { message: text.slice(0, 1000), ...data });
+    return this.clone(task);
+  }
+
+  /**
+   * 记一条插话。
+   *
+   * 三处都写（冗余是有意的）：task.steers[] 给面板气泡、progress 给时间线对齐、
+   * events.jsonl 给事后 grep「谁在什么时候说了什么」。
+   * 插话不改 status、不改 attempts —— 它不是重试。
+   */
+  addSteer(id, steer) {
+    const task = this.tasks.get(id);
+    if (!task) return null;
+    const entry = {
+      at: steer?.at || nowIso(),
+      text: String(steer?.text || "").slice(0, 4000),
+      parts: Array.isArray(steer?.parts) && steer.parts.length > 1 ? steer.parts.map((part) => String(part).slice(0, 2000)) : undefined,
+      source: steer?.source || "panel",
+      actor: steer?.actor && typeof steer.actor === "object" ? { ...steer.actor } : undefined,
+      delivered: steer?.delivered !== false,
+      error: steer?.error ? String(steer.error).slice(0, 500) : undefined,
+    };
+    if (!Array.isArray(task.steers)) task.steers = [];
+    task.steers.push(entry);
+    if (task.steers.length > 50) task.steers = task.steers.slice(-50);
+    task.steerCount = Number(task.steerCount || 0) + 1;
+    task.lastSteerAt = entry.at;
+    this.#save(task);
+    this.#event(id, "steer", {
+      text: entry.text.slice(0, 1000),
+      source: entry.source,
+      chatId: entry.actor?.chatId || null,
+    });
     return this.clone(task);
   }
 
@@ -351,9 +450,18 @@ export class TaskStore {
     return true;
   }
 
-  listTasks({ status = null, stage = null, limit = 50 } = {}) {
+  /**
+   * 列任务。
+   * @param {{status?:string|null, stage?:string|null, role?:"main"|"side"|"all"|null,
+   *   limit?:number}} filter
+   * role 省略 = 不过滤（内部调用保持老行为）；HTTP 层默认 main。
+   */
+  listTasks({ status = null, stage = null, role = null, limit = 50 } = {}) {
     let values = [...this.tasks.values()];
     if (status) values = values.filter((task) => task.status === status);
+    if (role === "main" || role === "side") {
+      values = values.filter((task) => (task.role === "side" ? "side" : "main") === role);
+    }
     if (stage && STAGES.includes(stage)) {
       values = values.filter((task) => stageOf(task) === stage);
     }
@@ -364,6 +472,7 @@ export class TaskStore {
   counts() {
     const result = {
       total: this.tasks.size,
+      side: 0,
       queued: 0,
       running: 0,
       retrying: 0,
@@ -374,6 +483,12 @@ export class TaskStore {
       stages: { running: 0, waiting: 0, queued: 0, done: 0 },
     };
     for (const task of this.tasks.values()) {
+      // 侧问单独计数：它不该把「等你 / 在跑」这些格子撑起来，
+      // 否则用户会以为有 3 个任务在排队，其实只有 1 个主任务 + 2 个答疑。
+      if (task.role === "side") {
+        result.side += 1;
+        continue;
+      }
       if (Object.hasOwn(result, task.status)) result[task.status] += 1;
       result.stages[stageOf(task)] += 1;
     }
@@ -408,6 +523,12 @@ export class TaskStore {
       progress: task.progress.slice(-1),
       hasResult: Boolean(task.result),
       resultPreview: task.result ? String(task.result).slice(0, 240) : null,
+      role: task.role === "side" ? "side" : "main",
+      parentTaskId: task.parentTaskId || null,
+      sideQuestion: task.sideQuestion || null,
+      readOnly: task.readOnly === true,
+      steerCount: Number(task.steerCount || 0),
+      lastSteerAt: task.lastSteerAt || null,
     };
   }
 

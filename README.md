@@ -4,6 +4,16 @@ DSH 当总调度，独立 Hub 管队列和结果，命令行 Agent 当员工。�
 
 新增员工的完整说明见 `CHANGELOG.md` 与面板上的「+ 新增员工」。
 
+## 任务中对话
+
+任务在跑时可以在右栏直接说话，不用等它结束：
+
+- **插话**：把新要求追加到正在跑的员工进程，会改变这次任务的走向。目前只有 Claude CLI 支持，要先在员工设置里打开「允许插话」。
+- **侧问**：另起一条只读任务问一句，不打断主任务、不改文件、也不会冲掉主任务的会话记忆。
+- **Enter 默认走 `auto`**：能插就插，插不进去自动降级成侧问；对着侧问结果按 Enter 就是「继续追问」，新侧问仍挂在原主任务下面。
+
+接口统一是 `POST /api/tasks/:id/say`，带 `text` 与 `mode`（`auto` / `steer` / `side`）。判定规则只在后端一处，网页和手机消息走同一套。
+
 ## 工单阶段
 
 面板只看四个阶段，比原始 `status` 更接近「我现在要不要动手」：
@@ -44,7 +54,11 @@ DSH 当总调度，独立 Hub 管队列和结果，命令行 Agent 当员工。�
   - `shared.mjs`：三种 CLI 共用的启动、逐行解析与收尾
 - `plugin/index.mjs`：DSH 工具（派活、列表、结果、停止、重派）
 - `plugin/client.mjs`：DSH 左侧 Agent Hub 面板
-- `public/`：独立面板页面
+- `public/`：独立网页工作台（三栏），拆成 `app.js` / `panel-common.js` / `panel-workbench.js` / `panel-talk.js` / `panel-channels.js`
+- `src/channels/`：手机消息通道。Telegram（long polling）、飞书（WebSocket 长连接）已可用；企业微信、个人微信只留接口位
+- `src/routes/channels.mjs`：通道配置、配对码、绑定、测试连接接口
+- `bin/dsh-agent-hub.mjs`：命令行 / 未来 npx 入口；`src/cli-options.mjs` + `src/config.mjs` 负责参数与路径解析
+- `tools/launch.mjs` + `start-hub.bat` + 桌面 bat：双击启动链路
 - `config/workers.json`：员工与工作目录配置
 - `data/`：任务、日志、会话号，只保存在本机
 - `CHANGELOG.md`：版本更新日志
@@ -52,14 +66,22 @@ DSH 当总调度，独立 Hub 管队列和结果，命令行 Agent 当员工。�
 
 ## 启动 Hub
 
-在项目目录运行：
+**最省事：双击桌面上的「启动 Agent Hub.bat」。** 会弹出一个黑色窗口并自动打开面板。这个窗口不要关——关掉窗口就是停止服务，手机上就派不了活了。
+
+也可以在命令行里手动启动：
 
 ```powershell
 cd "E:\workPM\dsh-agent-hub"
 npm start
 ```
 
-保持这个终端窗口运行。然后打开：
+`npm start` 和双击走的是同一个入口（`bin/dsh-agent-hub.mjs`），也是以后 `npx dsh-agent-hub` 那条路。想换端口或数据目录：
+
+```powershell
+npm run cli -- --port 4648 --data-dir "D:\my-hub-data"
+```
+
+保持窗口运行，然后打开：
 
 ```text
 http://127.0.0.1:4647

@@ -106,6 +106,13 @@ export default {
   transport: "jsonl",
   supportsResume: true,
   supportsExtraDirs: true,
+  /**
+   * 结构上不可能插话：`codex exec <prompt>` 把 prompt 当位置参数，一次性执行，
+   * 没有持续输入入口（stdin 立刻 end 掉，否则它会一直等输入）。
+   * 别在这里假装支持 —— 硬塞会得到"以为插进去了其实没生效"。
+   */
+  supportsSteer: false,
+  steerHint: "Codex 的 prompt 是命令行参数、一次性执行，没法中途插话。想追加要求请用侧问（只读答疑），或 /停 后重新派。",
   commandHint: "node",
   defaultPermissionMode: "workspace-write",
   permissionModes: [

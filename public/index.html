@@ -7,7 +7,7 @@
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
+<body class="app" data-detail="closed" data-side="open">
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
@@ -19,153 +19,210 @@
           <p>DSH 主控 · 本地任务总线 · 员工按项目分组</p>
         </div>
       </div>
-      <div class="connection" id="connection">
-        <span class="dot"></span>
-        <span id="connection-text">连接中</span>
+      <div class="topbar-right">
+        <button class="ghost small" id="open-channels" type="button" title="通道设置：在手机上派活、插话、侧问">
+          通道<span class="chan-badge" id="channel-badge">—</span>
+        </button>
+        <div class="connection" id="connection">
+          <span class="dot"></span>
+          <span id="connection-text">连接中</span>
+        </div>
       </div>
     </header>
 
-    <section class="stages" aria-label="工单阶段">
-      <button class="stage-card" type="button" data-stage="running">
-        <span class="stage-label"><i class="stage-dot running"></i>在跑</span>
-        <strong id="stage-running">0</strong>
-        <span class="stage-hint">机器正在干，不用管</span>
+    <!-- 一行状态字；点 ▾ 才展开每项是什么意思 -->
+    <div class="statusline" id="statusline" aria-label="工单阶段">
+      <button class="sc" type="button" data-stage="running">
+        <i class="sc-dot running"></i>
+        <span class="sc-label">在跑</span>
+        <b id="stage-running">0</b>
+        <span class="sc-hint">机器正在干，不用管</span>
       </button>
-      <button class="stage-card" type="button" data-stage="waiting">
-        <span class="stage-label"><i class="stage-dot waiting"></i>等你</span>
-        <strong id="stage-waiting">0</strong>
-        <span class="stage-hint">需要你看一眼或决定</span>
+      <span class="sc-sep" aria-hidden="true">·</span>
+      <button class="sc" type="button" data-stage="waiting">
+        <i class="sc-dot waiting"></i>
+        <span class="sc-label">等你</span>
+        <b id="stage-waiting">0</b>
+        <span class="sc-hint">需要你看一眼或决定</span>
       </button>
-      <button class="stage-card" type="button" data-stage="queued">
-        <span class="stage-label"><i class="stage-dot queued"></i>队列里</span>
-        <strong id="stage-queued">0</strong>
-        <span class="stage-hint">排着，还没轮到</span>
+      <span class="sc-sep" aria-hidden="true">·</span>
+      <button class="sc" type="button" data-stage="queued">
+        <i class="sc-dot queued"></i>
+        <span class="sc-label">队列</span>
+        <b id="stage-queued">0</b>
+        <span class="sc-hint">排着，还没轮到</span>
       </button>
-      <button class="stage-card" type="button" data-stage="done">
-        <span class="stage-label"><i class="stage-dot done"></i>已结束</span>
-        <strong id="stage-done">0</strong>
-        <span class="stage-hint">完成或已收尾</span>
+      <span class="sc-sep" aria-hidden="true">·</span>
+      <button class="sc" type="button" data-stage="done">
+        <i class="sc-dot done"></i>
+        <span class="sc-label">已结束</span>
+        <b id="stage-done">0</b>
+        <span class="sc-hint">完成或已收尾</span>
       </button>
-    </section>
+      <span class="statusline-gap"></span>
+      <label class="sc-toggle" title="侧问是只读问答任务，默认不混进主任务流；勾上一起看。">
+        <input type="checkbox" id="show-side">
+        <span>含侧问</span>
+      </label>
+      <button class="link" id="clear-filter" type="button" hidden>看全部</button>
+      <button class="icon-button small" id="status-expand" type="button" title="展开说明">▾</button>
+    </div>
 
-    <section class="team" aria-label="项目与员工">
-      <div class="team-head">
-        <h2>项目与员工</h2>
-        <button class="primary small" id="add-worker" type="button">+ 新增员工</button>
-      </div>
-      <div class="project-list" id="project-list">
-        <p class="empty">正在读取员工…</p>
-      </div>
-    </section>
-
-    <section class="composer" aria-label="派发任务">
-      <div class="section-title">
-        <h2>派发任务</h2>
-        <span>任务会进入后台队列，DSH 不需要一直停留在这里</span>
-      </div>
-      <div class="template-bar">
-        <span class="template-label">模板</span>
-        <div class="template-chips" id="template-chips"></div>
-        <button class="link" id="save-template" type="button" hidden>+ 存为模板</button>
-      </div>
-      <textarea id="prompt" rows="4" placeholder="写清目标、范围、产物要求和验收标准。例如：阅读项目里的 xxx，整理一份 yyy 到 docs/..."></textarea>
-      <div class="composer-row">
-        <label class="field worker-field">
-          <span>派给</span>
-          <select id="worker-select"></select>
-        </label>
-        <label class="field grow">
-          <span>工作目录（默认跟员工走，可临时改）</span>
-          <input id="cwd" type="text" spellcheck="false" placeholder="C:\path\to\workspace">
-        </label>
-        <label class="field model-field">
-          <span id="model-label">模型（留空＝跟随路由）</span>
-          <input id="model" type="text" spellcheck="false" list="model-options" placeholder="默认">
-        </label>
-        <datalist id="model-options"></datalist>
-        <label class="check" title="勾上＝这次不带上次的对话记忆，从头开始。不勾＝接着这个员工在这个目录下的上一次对话继续说。">
-          <input id="new-session" type="checkbox">
-          <span>清空记忆</span>
-        </label>
-        <button class="primary" id="dispatch">派发任务</button>
-      </div>
-      <p class="form-note" id="form-note"></p>
-    </section>
-
-    <main class="workspace">
-      <section class="task-column" aria-label="任务列表">
-        <div class="list-head">
-          <h2>任务<span class="scope" id="list-scope">全部</span></h2>
-          <button class="ghost small hidden" id="clear-filter" type="button">看全部</button>
+    <div class="workbench" id="workbench">
+      <!-- 左栏：项目与员工 -->
+      <aside class="sidebar" id="sidebar" aria-label="项目与员工">
+        <div class="side-head">
+          <button class="icon-button small" id="side-toggle" type="button" title="折叠 / 展开左栏">☰</button>
+          <h2 class="side-title">项目与员工</h2>
+          <button class="ghost small" id="add-worker" type="button" title="新增员工">+</button>
         </div>
-        <div class="task-list" id="task-list">
+        <div class="side-scroll">
+          <div class="project-list" id="project-list">
+            <p class="empty">正在读取员工…</p>
+          </div>
+        </div>
+        <div class="side-foot">
+          <button class="link" id="usage-open" type="button">用量</button>
+          <button class="link" id="side-channels" type="button">通道</button>
+        </div>
+      </aside>
+
+      <!-- 中栏：派活 + 任务流 -->
+      <section class="main" aria-label="任务">
+        <form class="composer" id="composer" autocomplete="off">
+          <div class="template-bar">
+            <span class="template-label">模板</span>
+            <div class="template-chips" id="template-chips"></div>
+            <button class="link" id="save-template" type="button" hidden>+ 存为模板</button>
+          </div>
+          <textarea id="prompt" rows="2" placeholder="写清目标、范围、产物要求和验收标准。例如：阅读项目里的 xxx，整理一份 yyy 到 docs/..."></textarea>
+          <div class="composer-row">
+            <label class="field worker-field">
+              <span>派给</span>
+              <select id="worker-select"></select>
+            </label>
+            <label class="field grow">
+              <span>工作目录（默认跟员工走，可临时改）</span>
+              <input id="cwd" type="text" spellcheck="false" placeholder="C:\path\to\workspace">
+            </label>
+            <label class="field model-field">
+              <span id="model-label">模型</span>
+              <input id="model" type="text" spellcheck="false" list="model-options" placeholder="默认">
+            </label>
+            <datalist id="model-options"></datalist>
+            <label class="check" title="勾上＝这次不带上次的对话记忆，从头开始。不勾＝接着这个员工在这个目录下的上一次对话继续说。">
+              <input id="new-session" type="checkbox">
+              <span>清空记忆</span>
+            </label>
+            <button class="primary" id="dispatch" type="button">派发任务</button>
+          </div>
+          <p class="form-note" id="form-note"></p>
+        </form>
+
+        <div class="flow-head">
+          <h2>任务<span class="scope" id="list-scope">全部</span></h2>
+          <button class="link" id="refresh-tasks" type="button">刷新</button>
+        </div>
+        <div class="flow" id="task-list">
           <p class="empty">还没有任务</p>
         </div>
       </section>
 
-      <section class="detail-column" aria-label="任务详情">
+      <!-- 右栏：选中任务才出现 -->
+      <aside class="inspector" id="inspector" aria-label="任务详情">
         <div id="detail-empty" class="detail-empty">
           <div class="empty-mark" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M4 6.5h16M4 12h11M4 17.5h8"/></svg>
           </div>
-          <h2>选一个任务看结果</h2>
-          <p>左边是任务队列，右边会显示输入、执行进度和员工的最终回报。</p>
+          <h2>点一行看结果</h2>
+          <p>中间是任务流，点任意一行，这里会显示结果、执行进度和对话。</p>
         </div>
+
         <article id="detail" class="detail hidden">
-          <div class="detail-head">
-            <div>
-              <div class="detail-eyebrow"><span id="detail-status" class="status">状态</span><span id="detail-id"></span></div>
-              <h2 id="detail-title"></h2>
+          <div class="insp-head">
+            <div class="insp-eyebrow">
+              <span id="detail-status" class="status">状态</span>
+              <span class="insp-id" id="detail-id"></span>
+              <span class="tag" id="detail-side-tag" hidden>侧问</span>
+              <span class="spacer"></span>
+              <button class="icon-button" id="close-detail" type="button" aria-label="收起详情" title="收起详情">×</button>
             </div>
-            <div class="detail-actions">
-              <button class="ghost" id="retry-task" hidden>重新派发</button>
-              <button class="ghost" id="ack-task" hidden>已处理</button>
-              <button class="ghost" id="copy-result" hidden>复制结果</button>
-              <button class="danger" id="stop-task" hidden>停止任务</button>
+            <h2 id="detail-title"></h2>
+            <div class="insp-meta" id="detail-meta"></div>
+            <div class="insp-actions">
+              <button class="ghost small" id="retry-task" type="button" hidden>重新派发</button>
+              <button class="ghost small" id="ack-task" type="button" hidden>已处理</button>
+              <button class="ghost small" id="copy-result" type="button" hidden>复制结果</button>
+              <button class="danger small" id="stop-task" type="button" hidden>停止</button>
+            </div>
+            <div class="path-line">
+              <span>工作区</span>
+              <code id="meta-cwd">—</code>
+              <button class="link" id="open-cwd" type="button">打开目录</button>
+              <button class="link" id="copy-cwd" type="button">复制路径</button>
             </div>
           </div>
-          <div class="meta-grid">
-            <div><span>员工</span><strong id="meta-worker"></strong></div>
-            <div><span>开始</span><strong id="meta-started"></strong></div>
-            <div><span>耗时</span><strong id="meta-duration"></strong></div>
-            <div><span>尝试</span><strong id="meta-attempts"></strong></div>
-            <div><span>会话</span><strong id="meta-session"></strong></div>
-          </div>
-          <div class="path-line">
-            <span>工作区</span>
-            <code id="meta-cwd">—</code>
-            <button class="link" id="open-cwd" type="button">打开目录</button>
-          </div>
+
           <div class="usage-box" id="usage-box" hidden>
             <span class="usage-label">本次用量</span>
             <p class="usage-text" id="usage-text"></p>
             <p class="usage-note" id="usage-note"></p>
           </div>
-          <div class="detail-block">
-            <h3>派发的任务</h3>
-            <pre id="detail-prompt" class="prompt-box"></pre>
-          </div>
-          <div class="detail-block">
-            <h3>执行进度</h3>
-            <ol class="progress-list" id="progress-list"></ol>
-          </div>
-          <div class="detail-block" id="result-block" hidden>
+
+          <section class="result-block" id="result-block" hidden>
             <h3>员工回报</h3>
             <pre id="detail-result" class="result-box"></pre>
-          </div>
-          <div class="detail-block error-block" id="error-block" hidden>
+          </section>
+
+          <section class="error-block" id="error-block" hidden>
             <h3>错误</h3>
             <pre id="detail-error"></pre>
-          </div>
-          <details class="log-block">
+          </section>
+
+          <details class="sect" id="progress-block">
+            <summary id="progress-summary">执行进度</summary>
+            <ol class="progress-list" id="progress-list"></ol>
+          </details>
+
+          <details class="sect">
+            <summary>派发的任务</summary>
+            <pre id="detail-prompt" class="prompt-box"></pre>
+          </details>
+
+          <details class="sect">
             <summary>原始日志</summary>
             <pre id="detail-log"></pre>
           </details>
+
+          <!-- 对话区：任务在跑 / 侧问 / 有过插话时才出现 -->
+          <section class="talk" id="talk" hidden>
+            <div class="talk-head">
+              <h3>对话</h3>
+              <span class="talk-mode" id="talk-mode"></span>
+            </div>
+            <div class="talk-warn" id="talk-warn" hidden></div>
+            <div class="talk-log" id="talk-log"></div>
+            <div class="talk-note" id="talk-note" hidden></div>
+            <div class="talk-foot">
+              <textarea id="talk-input" rows="2" placeholder="说一句。任务在跑 = 插话，员工这一轮就能看到；问一句 = 侧问，只读不打断。"></textarea>
+              <div class="talk-btns">
+                <button class="ghost small" id="talk-steer" type="button">插话</button>
+                <button class="ghost small" id="talk-side" type="button">侧问</button>
+                <span class="talk-tip">Enter 发送 · Shift+Enter 换行</span>
+              </div>
+            </div>
+          </section>
         </article>
-      </section>
-    </main>
+      </aside>
+    </div>
   </div>
 
+  <div id="boot-error" class="boot-error hidden">
+    界面脚本没加载成功。请确认 Hub 是最新版本（<code>npm start</code> 重启一次），
+    或查看浏览器控制台里哪个 <code>/panel-*.js</code> 报了 404。
+  </div>
+
+  <!-- 员工表单 -->
   <div class="overlay hidden" id="worker-modal">
     <div class="modal">
       <div class="modal-head">
@@ -211,16 +268,37 @@
           <span>附加目录（可留空，多个用分号隔开，例如素材在 C 盘）</span>
           <input id="w-extra" type="text" spellcheck="false" placeholder="C:\素材;D:\参考">
         </label>
+
+        <div class="field full" id="w-steer-field">
+          <span>允许插话</span>
+          <label class="check">
+            <input id="w-stream" type="checkbox">
+            <span>跑着的时候允许补一句话</span>
+          </label>
+          <small id="w-steer-hint"></small>
+        </div>
+        <label class="field" id="w-steer-idle-field">
+          <span>插话后等多久收口（秒）</span>
+          <input id="w-steer-idle" type="number" min="3" max="60" step="1" value="3">
+          <small>没有新插话就等这么久结束这一轮，默认 3 秒。</small>
+        </label>
+
         <details class="advanced full">
-          <summary>高级：启动方式（一般不用碰）</summary>
+          <summary>高级：启动方式与超时（一般不用碰）</summary>
           <label class="field full">
             <span>启动命令</span>
             <input id="w-command" type="text" spellcheck="false" placeholder="默认同类员工已配好的命令">
           </label>
           <p class="advanced-note" id="w-launch-hint"></p>
+          <label class="field">
+            <span>侧问超时（秒）</span>
+            <input id="w-side-timeout" type="number" min="30" max="900" step="10" value="180">
+            <small>侧问是只读问答，超时就停下，默认 180 秒。</small>
+          </label>
         </details>
+
         <label class="field full">
-          <span>备注（可留空，会显示在卡片上）</span>
+          <span>备注（可留空，会显示在员工那一行的悬停里）</span>
           <input id="w-note" type="text" placeholder="例如：只负责文案，不改代码">
         </label>
       </div>
@@ -234,6 +312,7 @@
     </div>
   </div>
 
+  <!-- 目录选择器 -->
   <div class="overlay hidden" id="dir-modal">
     <div class="modal">
       <div class="modal-head">
@@ -257,6 +336,53 @@
     </div>
   </div>
 
-  <script src="/app.js"></script>
+  <!-- 通道设置 -->
+  <div class="overlay hidden" id="channels-modal">
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <h2>通道设置</h2>
+        <button class="icon-button" id="ch-cancel" type="button" aria-label="关闭">×</button>
+      </div>
+      <p class="chan-status-line" id="ch-status"></p>
+      <div class="chan-tabs" id="ch-tabs"></div>
+      <div class="chan-body" id="ch-body"></div>
+      <div class="modal-actions">
+        <button class="ghost" id="ch-test" type="button">测试连接</button>
+        <button class="link" id="ch-refresh-chats" type="button">刷新最近会话</button>
+        <span class="spacer"></span>
+        <button class="ghost" id="ch-close" type="button">关闭</button>
+        <button class="primary" id="ch-save" type="button">保存并应用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 今日用量 -->
+  <div class="overlay hidden" id="usage-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>今日用量</h2>
+        <button class="icon-button" id="usage-cancel" type="button" aria-label="关闭">×</button>
+      </div>
+      <div id="usage-body"></div>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button class="ghost" id="usage-close" type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="row-menu hidden" id="row-menu"></div>
+
+  <script type="module" src="/app.js"></script>
+  <script>
+    // 看门狗：module 图任何一个文件 404，浏览器不会执行 app.js，
+    // 这时至少给一句人话，而不是白屏让人猜。
+    window.setTimeout(function () {
+      if (!window.__hubBooted) {
+        var box = document.getElementById("boot-error");
+        if (box) box.classList.remove("hidden");
+      }
+    }, 3000);
+  </script>
 </body>
 </html>

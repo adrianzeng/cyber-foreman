@@ -20,7 +20,7 @@ function assistantTools(message) {
     .map((block) => block.name);
 }
 
-function buildArgs(worker, task) {
+function buildArgs(worker, task, streaming) {
   const args = [
     ...(Array.isArray(worker.argsPrefix) ? worker.argsPrefix : []),
     "-p",
@@ -28,10 +28,15 @@ function buildArgs(worker, task) {
     "stream-json",
     "--verbose",
     "--permission-mode",
-    worker.permissionMode || "acceptEdits",
+    // 侧问一律只读：只答疑，不改文件，这样"不打断主任务"才有实际保证。
+    task.readOnly === true ? "plan" : worker.permissionMode || "acceptEdits",
     "--permission-prompts",
     "none",
   ];
+  // 双向流式输入：stdin 保持打开，逐行写 user 消息就能触发新一轮。
+  if (streaming) {
+    args.push("--input-format", "stream-json");
+  }
   if (task.requestedModel || worker.model) {
     args.push("--model", task.requestedModel || worker.model);
   }
@@ -52,7 +57,19 @@ function buildArgs(worker, task) {
   return args;
 }
 
-function parseLine(event, state, { progress, hooks }) {
+/** stream-json 模式下 stdin 只认 JSON 行，首条 prompt 也要包成 user 消息。 */
+export function claudeUserLine(text) {
+  return JSON.stringify({
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "text", text: String(text ?? "") }],
+    },
+  });
+}
+
+function parseLine(event, state, context) {
+  const { progress, hooks, turnEnd } = context;
   if (event.session_id && event.session_id !== state.sessionId) {
     state.sessionId = event.session_id;
     hooks.onSession?.(state.sessionId);
@@ -80,6 +97,8 @@ function parseLine(event, state, { progress, hooks }) {
     if (event.is_error) {
       progress("Claude 报告本轮失败", "error", { error: event.result || event.subtype });
     }
+    // 这一轮结束了：流式模式下开始空闲收口计时，3 秒没人插话就关 stdin。
+    turnEnd?.();
   }
 }
 
@@ -124,6 +143,9 @@ export default {
   supportsResume: true,
   supportsExtraDirs: true,
   supportsBudget: true,
+  /** Claude 是唯一能插话的类型：-p 是开关、prompt 走 stdin，加 --input-format 后可继续写。 */
+  supportsSteer: true,
+  steerHint: "Claude 支持插话：在员工设置里打开「允许插话」后，任务在跑时可以直接追加要求。",
   budgetHint: "每轮结束后才检查，超了就停下落进「等你」，所以实际最多会超出一轮的量。建议至少给 1～2。按 Claude 牌价估，不是真实账单。",
   commandHint: "C:\\Users\\你的用户名\\.local\\bin\\claude.exe",
   defaultPermissionMode: "acceptEdits",
@@ -133,14 +155,22 @@ export default {
     { value: "default", label: "每次询问", hint: "无人值守时会卡在确认上，不建议" },
   ],
   start(worker, task, hooks) {
-    return runStream({
+    // 侧问任务永远走"写一次就关"的老路径：它是只读短任务，不需要中途插话。
+    const streaming = worker.streamInput === true && task.readOnly !== true;
+    const launched = runStream({
       worker,
       task,
       hooks,
-      args: buildArgs(worker, task),
+      args: buildArgs(worker, task, streaming),
       input: buildWorkerPrompt(task.prompt, "Claude"),
       parseLine,
       finalize,
+      streamInput: streaming,
+      formatInput: claudeUserLine,
+      // 让 Hub 知道"又跑完一轮了"，它用这个判断插话后有没有新输出。
+      onTurnEnd: () => hooks.onTurnEnd?.(),
     });
+    if (!streaming) return launched;
+    return { ...launched, usage: () => fromClaude(launched.latestResult()) };
   },
 };

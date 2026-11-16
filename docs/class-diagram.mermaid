@@ -1,0 +1,176 @@
+classDiagram
+  direction LR
+
+  class AgentHub {
+    +store
+    +workers
+    +processes : Map
+    +activeByWorker : Map
+    +activeSideByWorker : Map
+    +dispatch(input) Task
+    +steerTask(id, text, opts) object
+    +askSide(input) object
+    +stopTask(id) Task
+    +retryTask(id) Task
+    +acknowledgeTask(id) Task
+    +taskDetail(id) Task
+    +listWorkers() Worker[]
+    +usageStats(workerId, since) object
+    +capabilities() object
+    +stopAll() void
+  }
+
+  class TaskStore {
+    +tasksDir
+    +logsDir
+    +createTask(input) Task
+    +updateTask(id, patch) Task
+    +addProgress(id, msg, type)
+    +addSteer(id, steer) Task
+    +getTask(id) Task
+    +listTasks(filter) Task[]
+    +counts() object
+    +subscribe(fn) Function
+    +usageStats(opts) object
+    -#save(task) void
+  }
+
+  class ChannelConfigStore {
+    +file : string
+    +load() ChannelConfigStore
+    +get(id) ChannelConfig
+    +patch(id, patch) ChannelConfig
+    +setAllowlist(id, list) void
+    +addDelivery(delivery) void
+    +recordDelivery(taskId, patch) void
+    +deliveriesFor(taskId) Delivery[]
+    +setLastList(chatId, ids) void
+    +getLastList(chatId) string[]
+    +persist() void
+  }
+
+  class ChannelManager {
+    +channels : Map
+    +load() ChannelManager
+    +startEnabled() Promise~void~
+    +restart(id) Promise~void~
+    +stopAll() Promise~void~
+    +statusList() ChannelView[]
+    +onTaskEvent(event) void
+    -supervise(adapter) void
+  }
+
+  class MessageRouter {
+    +configStore
+    +hub
+    +notifier
+    +handle(msg : InboundMessage) Promise~void~
+    +onTaskEvent(event) Promise~void~
+    -resolveBinding(msg) Binding
+    -dispatch(adapter, binding, text) Promise~void~
+    -steerOrSide(adapter, binding, taskId, text) Promise~void~
+  }
+
+  class IntentParser {
+    <<pure>>
+    +parseIntent(text, ctx) Intent
+    +shortId(taskId) string
+  }
+
+  class TaskNotifier {
+    <<pure>>
+    +receipt(task, workerName) string
+    +steered(task, warning) string
+    +completed(task, opts) string[]
+    +failed(task, opts) string[]
+    +sideAnswer(task, question) string
+    +statusLine(counts) string
+    +taskList(tasks) string
+    +split(text, limit) string[]
+  }
+
+  class BaseChannel {
+    <<abstract>>
+    +id : string
+    +label : string
+    +implemented : boolean
+    +readiness : string
+    +describeConfig() ConfigField[]
+    +normalize(patch, current) object
+    +status() ChannelStatus
+    +start(ctx) Promise~void~
+    +stop() Promise~void~
+    +send(chatId, text, opts) Promise~SendResult~
+    +listChats() ChatSummary[]
+    +test(config) Promise~TestResult~
+    -backoff(attempt) number
+  }
+
+  class TelegramChannel {
+    +apiBase : string
+    +offset : number
+    +pollLoop() Promise~void~
+    +getMe() Promise~object~
+    +send(chatId, text, opts) Promise~SendResult~
+  }
+
+  class FeishuChannel {
+    +wsClient
+    +tenantTokenCache
+    +connect() Promise~void~
+    +send(chatId, text, opts) Promise~SendResult~
+    +tenantToken() Promise~string~
+  }
+
+  class FeishuNormalize {
+    <<pure>>
+    +toInbound(payload) InboundMessage
+    +isMentionMe(payload) boolean
+    +dedupe(messageId) boolean
+  }
+
+  class WecomChannelStub {
+    +implemented = false
+    +readiness = "needs-public"
+  }
+
+  class WechatChannelStub {
+    +implemented = false
+    +readiness = "unsupported"
+  }
+
+  class Secrets {
+    <<pure>>
+    +mask(value) string
+    +mergeMasked(patch, current) object
+    +scrub(text, secrets) string
+  }
+
+  class ChannelRoutes {
+    +maybeHandleChannels(ctx) boolean
+  }
+
+  class CliOptions {
+    <<pure>>
+    +parse(argv, env, config) object
+    +resolveDataDir(opts) string
+    +pickPort(preferred) Promise~number~
+  }
+
+  AgentHub --> TaskStore : 读写任务与插话记录
+  ChannelManager ..> TaskStore : subscribe 状态事件
+  ChannelManager o-- BaseChannel : 持有 1..n
+  ChannelManager --> ChannelConfigStore : 配置/白名单/投递
+  ChannelManager --> MessageRouter : 转发任务事件
+  MessageRouter --> AgentHub : dispatch/steerTask/askSide/taskDetail
+  MessageRouter --> IntentParser : 解析意图
+  MessageRouter --> TaskNotifier : 生成文案
+  MessageRouter --> ChannelConfigStore : 白名单与投递记录
+  BaseChannel <|-- TelegramChannel
+  BaseChannel <|-- FeishuChannel
+  BaseChannel <|-- WecomChannelStub
+  BaseChannel <|-- WechatChannelStub
+  FeishuChannel --> FeishuNormalize : 事件归一化
+  ChannelRoutes --> ChannelManager : 启停与配置
+  ChannelRoutes --> Secrets : 出站脱敏
+  CliOptions --> AgentHub : 构造运行时参数
