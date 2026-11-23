@@ -159,10 +159,10 @@ export class AgentHub {
     return `${adapter.label} 可以插话：任务在跑时直接追加要求即可。`;
   }
 
-  /** 面板下拉用：某类员工能选哪些模型，当前生效的是哪个。 */
-  modelOptions(kind, workerId = null) {
+  /** 面板下拉用：某类员工能选哪些模型，当前生效的是哪个；refresh=true 强制重读本机配置。 */
+  modelOptions(kind, workerId = null, options = {}) {
     const worker = workerId ? this.workers[workerId] : null;
-    return modelOptionsFor(kind || worker?.kind || DEFAULT_KIND, worker?.model || null);
+    return modelOptionsFor(kind || worker?.kind || DEFAULT_KIND, worker?.model || null, undefined, options);
   }
 
   modelCatalog() {
@@ -337,6 +337,7 @@ export class AgentHub {
             sessionId: result.sessionId,
             exitCode: result.exitCode,
             usage: result.usage,
+            retryable: result.retryable !== false,
           });
           return;
         }
@@ -533,6 +534,28 @@ export class AgentHub {
     this.store.addProgress(id, "人工重新派发，已回到队列", "queued");
     this.pump(task.workerId);
     return this.store.getTask(id);
+  }
+
+  /** 批量重派：把 Hub 重启后标记为 interrupted 且未标记已处理的主任务一键放回队列。 */
+  retryInterruptedTasks() {
+    const candidates = this.store
+      .listTasks({ status: "interrupted", role: "main", limit: 200 })
+      .filter((task) => !task.acknowledgedAt);
+    const retried = [];
+    const skipped = [];
+    for (const item of candidates) {
+      try {
+        retried.push(this.retryTask(item.id));
+      } catch (error) {
+        skipped.push({
+          id: item.id,
+          title: item.title,
+          workerId: item.workerId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return { count: retried.length, retried, skipped };
   }
 
   /** 「等你」里的任务由人判断处理完：不改状态，只把它移出「等你」。 */

@@ -20,7 +20,7 @@
 开一个终端，保持窗口别关：
 
 ```powershell
-cd "E:\workPM\dsh-agent-hub"
+cd "C:\path\to\cyber-foreman"
 npm start
 ```
 
@@ -35,11 +35,11 @@ npm start
 所以用 pnpm 直接装成链接：
 
 ```powershell
-cd C:\Users\ZHY\.dsh\profiles\desktop
-pnpm add "link:E:\workPM\dsh-agent-hub"
+cd %USERPROFILE%\.dsh\profiles\desktop
+pnpm add "link:C:\path\to\cyber-foreman"
 ```
 
-装完在 `node_modules\@local\` 下会出现一个 `dsh-agent-hub`，它指向项目目录。
+装完在 `node_modules\` 下会出现对应的包链接，它指向项目目录。
 
 **为什么用 `link:` 而不是 tgz：** 链接是实时的，以后改插件代码，重启 DSH 就生效，不用重新打包。tgz 是复制一份，每次改都要重装。
 
@@ -54,14 +54,14 @@ pnpm add "link:E:\workPM\dsh-agent-hub"
 打开这个文件：
 
 ```
-C:\Users\ZHY\.dsh\profiles\desktop\package.json
+%USERPROFILE%\.dsh\profiles\desktop\package.json
 ```
 
 在 `bundles` 数组末尾加一行，注意上一行要有逗号：
 
 ```json
-        "qiaomu-rss-dsh",
-        "@local/dsh-agent-hub"
+        "your-other-plugin",
+        "cyber-foreman"
 ```
 
 加完这一段应该长这样（只贴结尾部分）：
@@ -70,8 +70,8 @@ C:\Users\ZHY\.dsh\profiles\desktop\package.json
       "bundles": [
         "@deepseek-ai/dsh-base",
         "...中间不动...",
-        "qiaomu-rss-dsh",
-        "@local/dsh-agent-hub"
+        "your-other-plugin",
+        "cyber-foreman"
       ]
 ```
 
@@ -110,11 +110,11 @@ C:\Users\ZHY\.dsh\profiles\desktop\package.json
 ## 卸载
 
 ```powershell
-cd C:\Users\ZHY\.dsh\profiles\desktop
-pnpm remove "@local/dsh-agent-hub"
+cd %USERPROFILE%\.dsh\profiles\desktop
+pnpm remove "cyber-foreman"
 ```
 
-再把 `package.json` 里 `bundles` 那行 `"@local/dsh-agent-hub"` 删掉，重启 DSH。
+再把 `package.json` 里 `bundles` 那行 `"cyber-foreman"` 删掉，重启 DSH。
 
 ---
 
@@ -125,7 +125,7 @@ pnpm remove "@local/dsh-agent-hub"
 1. **bundles 加了吗？** 九成的问题出在这一步。
 2. **DSH 真的重启了吗？** 改完配置必须重启进程。
 3. **Hub 在跑吗？** 终端里 `curl http://127.0.0.1:4647/api/health`，能出 JSON 就是好的。
-4. **看 DSH 启动日志**有没有 `dsh-agent-hub` 相关的报错。
+4. **看 DSH 启动日志**有没有 `cyber-foreman` 相关的报错。
 
 ---
 
@@ -134,7 +134,7 @@ pnpm remove "@local/dsh-agent-hub"
 如果只想先试试、不想动 profile，可以临时加载：
 
 ```powershell
-dsh web --patch "E:\workPM\dsh-agent-hub\cordis.local.yml"
+dsh web --patch "C:\path\to\cyber-foreman\cordis.patch.yml"
 ```
 
 这个方式不改任何配置文件，关掉就没了。适合先尝个鲜，但不适合长期用。

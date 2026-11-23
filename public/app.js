@@ -83,7 +83,7 @@ async function loadOverview({ quiet = false } = {}) {
     state.overview = overview;
     state.workers = overview.workers || [];
     state.tasks = tasks.tasks || [];
-    setConnection("online", "Hub 在线");
+    setConnection("online", "中枢在线");
     renderAll();
 
     if (!state.selectedId && state.tasks.length) {
@@ -97,7 +97,7 @@ async function loadOverview({ quiet = false } = {}) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const networkIssue = /fetch|network|load failed|failed to fetch|连不上/i.test(message);
-    setConnection(networkIssue ? "offline" : "online", networkIssue ? "Hub 离线" : "Hub 在线");
+    setConnection(networkIssue ? "offline" : "online", networkIssue ? "中枢离线" : "中枢在线");
     if (!quiet) {
       setFormNote(
         networkIssue ? `${message}。请先运行 npm start。` : `页面渲染出错：${message}`,

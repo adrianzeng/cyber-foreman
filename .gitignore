@@ -1,16 +1,20 @@
 node_modules/
 
-# 运行时数据：任务记录、日志、员工真实配置，不进仓库
+# 运行时数据：任务记录、会话 ID、通道 Token/配对码、日志、员工真实配置，绝不进仓库
 data/*
 !data/.gitignore
 
-# 本机专用配置（含绝对路径），只提交 example 版
+# 本机专用配置（含绝对路径或凭据），只提交 example 版
 config/workers.json
+config/channels.json
+config/*.local.json
 cordis.local.yml
+.env
+.env.*
 
-# 与项目无关的临时脚本
+# 与项目无关的临时脚本与打包产物
 tools/analyze-kernel-dump.py
-
+*.tgz
 *.log
 *.dmp
 .DS_Store

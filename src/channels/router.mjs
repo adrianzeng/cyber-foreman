@@ -2,6 +2,7 @@ import { MergeWindow, DEFAULT_MERGE_WINDOW_MS } from "./base.mjs";
 import { parseIntent, shortId } from "./intent.mjs";
 import * as text from "./notify.mjs";
 import { scrub } from "./secrets.mjs";
+import { CHANNEL_IDS } from "./store.mjs";
 
 /**
  * 消息路由：通道层唯一的「大脑」。
@@ -154,19 +155,27 @@ export class MessageRouter {
   /**
    * 任务事件回调。只推三种：首次进「等你」、终态、侧问答案；
    * running 期间老老实实不打扰（长任务最烦的就是刷屏）。
+   *
+   * v0.9.5 新增主动通知推送：
+   *   除了回推原 IM 派活会话（deliveries），当网页 / MCP 派发的主任务进入
+   *   completed 或 waiting（「等你」：失败/中断/卡住）时，自动向已启用且打开
+   *   notifyEnabled 的通道的已绑定会话推送简洁摘要，同一状态不重复推送。
    */
   async onTaskEvent(event) {
     if (!event || event.type !== "task") return;
-    const deliveries = this.configStore.deliveriesFor(event.taskId);
-    if (!deliveries.length) return;
 
     const isTerminal = TERMINAL_STATUSES.has(event.status);
     const isWaiting = event.stage === "waiting";
     if (!isTerminal && !isWaiting) return;
 
     const detail = this.hub.taskDetail ? this.hub.taskDetail(event.taskId) : null;
+    const deliveries = this.configStore.deliveriesFor(event.taskId);
+    const notifiedKeys = new Set();
 
     for (const delivery of deliveries) {
+      notifiedKeys.add(`${delivery.channelId}|${delivery.chatId}`);
+      const channelCfg = this.configStore.get(delivery.channelId);
+      if (channelCfg?.notifyEnabled === false) continue;
       if (isWaiting && delivery.lastNotifiedStatus === "waiting") continue;
       if (isTerminal && delivery.lastNotifiedStatus === event.status) continue;
 
@@ -180,6 +189,53 @@ export class MessageRouter {
         pushedAt: nowIso(),
         lastNotifiedStatus: isTerminal ? event.status : "waiting",
       });
+    }
+
+    // 主动推送：仅针对主任务的「完成」和「等你」（失败/中断/等待）
+    const role = event.role || detail?.role || "main";
+    const shouldBroadcast = role !== "side" && (event.status === "completed" || isWaiting);
+    if (!shouldBroadcast) return;
+
+    const targetStatus = isTerminal ? event.status : "waiting";
+    const messages = this.eventMessages(event, detail || { title: event.title, role }, { kind: "main" });
+    if (!messages.length) return;
+
+    for (const channelId of CHANNEL_IDS) {
+      const cfg = this.configStore.get(channelId);
+      if (!cfg?.enabled || cfg.notifyEnabled === false) continue;
+      const adapter = this.resolveChannel(channelId);
+      if (adapter && adapter.implemented === false) continue;
+
+      const targets = (cfg.allowlist || [])
+        .filter((item) => item && item.chatId && item.enabled !== false)
+        .map((item) => item.chatId);
+
+      // 企业微信 webhook 模式无需 allowlist，只要配置了 webhookUrl 即可直推群机器人。
+      if (channelId === "wecom" && cfg.mode !== "bridge" && cfg.webhookUrl && !targets.length) {
+        targets.push("wecom:webhook");
+      }
+
+      for (const chatId of targets) {
+        const key = `${channelId}|${chatId}`;
+        if (notifiedKeys.has(key)) continue;
+        notifiedKeys.add(key);
+
+        let ok = false;
+        for (const message of messages) {
+          const sent = await this.reply(channelId, chatId, message);
+          if (sent) ok = true;
+        }
+        if (ok) {
+          this.configStore.addDelivery({
+            taskId: event.taskId,
+            channelId,
+            chatId,
+            kind: "main",
+            pushedAt: nowIso(),
+            lastNotifiedStatus: targetStatus,
+          });
+        }
+      }
     }
   }
 

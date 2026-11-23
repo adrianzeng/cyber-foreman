@@ -94,6 +94,27 @@ export function fromCodex(raw) {
   };
 }
 
+/** Antigravity / 通用 CLI 的 usage 事件 → 统一用量。 */
+export function fromAgy(raw, turns = null) {
+  if (!raw || typeof raw !== "object") return null;
+  const input = num(raw.input_tokens ?? raw.inputTokens);
+  const output = num(raw.output_tokens ?? raw.outputTokens);
+  const cacheRead = num(raw.cache_read_tokens ?? raw.cache_read_input_tokens ?? raw.cacheReadTokens);
+  const thinking = num(raw.thinking_tokens ?? raw.reasoning_output_tokens ?? raw.thinkingTokens);
+  if (input === null && output === null && cacheRead === null) return null;
+  if (!input && !output && !cacheRead) return null;
+  return {
+    inputTokens: input,
+    outputTokens: output,
+    cacheReadTokens: cacheRead,
+    thinkingTokens: thinking,
+    turns: num(turns),
+    costUsd: null,
+    costBasis: null,
+    terminalReason: null,
+  };
+}
+
 /** 是否被预算刹车截停。传进来的是适配器 finalize 的结果。 */
 export function isBudgetExhausted(result) {
   if (!result) return false;

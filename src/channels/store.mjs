@@ -14,7 +14,7 @@ import { dirname } from "node:path";
  *   lastList     每个会话上次 /任务 的编号顺序（保证「/看 2」永远指同一个任务）
  */
 
-export const CHANNEL_IDS = ["telegram", "feishu", "wecom", "wechat"];
+export const CHANNEL_IDS = ["telegram", "feishu", "qq", "wecom", "wechat"];
 
 /** 每个通道最多绑 30 个会话。 */
 export const MAX_ALLOWLIST = 30;
@@ -33,7 +33,7 @@ export function isChannelId(id) {
 
 /** 一个通道的出厂默认值。字段与面板表单一一对应。 */
 export function emptyChannelConfig(id) {
-  const base = { enabled: false, allowlist: [], pairCode: null };
+  const base = { enabled: false, notifyEnabled: true, allowlist: [], pairCode: null };
   switch (id) {
     case "telegram":
       return {
@@ -50,10 +50,30 @@ export function emptyChannelConfig(id) {
         domain: "open.feishu.cn",
         defaults: { workerId: null, cwd: null, newSession: false },
       };
+    case "qq":
+      return {
+        ...base,
+        appId: "",
+        clientSecret: "",
+        sandbox: false,
+        defaults: { workerId: null, cwd: null, newSession: false },
+      };
     case "wecom":
-      return { ...base, note: "需要公网回调地址，下一阶段再做" };
+      return {
+        ...base,
+        mode: "webhook",
+        webhookUrl: "",
+        bridgeUrl: "",
+        bridgeToken: "",
+        defaults: { workerId: null, cwd: null, newSession: false },
+      };
     case "wechat":
-      return { ...base, note: "微信 4.x 暂无免费方案，这里只留位置" };
+      return {
+        ...base,
+        bridgeUrl: "http://127.0.0.1:8787",
+        bridgeToken: "",
+        defaults: { workerId: null, cwd: null, newSession: false },
+      };
     default:
       return base;
   }

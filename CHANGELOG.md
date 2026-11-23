@@ -1,6 +1,108 @@
 # 更新日志
 
-本项目按「完成一个功能集成就进一位小数」推进：0.1 → 0.2 → 0.3 …… 直到 1.0。
+本项目按「完成一个功能集成就进一位小数」推进：0.1 → 0.2 → 0.3 …… 现已抵达 **1.0.0 正式封版**。
+
+---
+
+## 1.0.0 — 2026-11-22
+
+**主题：正式封版与全局品牌重塑 —— CyberForeman（赛博包工头）开源发布就绪。**
+
+### 品牌重塑与入口升级
+
+- **正式定名 CyberForeman（赛博包工头）**：`package.json` 包名更新为 `cyber-foreman`、版本升至 `1.0.0`、移除 `private: true` 并补充 `keywords` 与开源发布白名单 `files`。
+- **双入口矩阵（含平滑兼容）**：
+  - 新增主入口 `bin/cyber-foreman.mjs` 与 MCP 入口 `bin/cyber-foreman-mcp.mjs`（支持 `CYBER_FOREMAN_URL`，兼容 `DSH_HUB_URL`）。
+  - 保留 `bin/dsh-agent-hub.mjs` 与 `bin/dsh-agent-hub-mcp.mjs` 作为向后兼容转发入口，老配置与脚本零改动继续可用。
+- **启动器与前端界面同步**：更新 `start-hub.bat`、`tools/launch.mjs`（升级为静默后台常驻，关窗不断流）、新增 `stop-hub.bat` 与 `tools/stop.mjs` 一键停机，并同步更新 `src/cli-options.mjs`、`src/server.mjs`、`src/mcp/server.mjs`、`public/index.html` 与 `public/app.js` 的品牌标题与提示文案。
+
+### 开源发布文档与安全隔离
+
+- **重写正式版 `README.md` 与 `docs/mcp-integration.md`**：全面呈现「跨桌面端 MCP 枢纽 + 独立网页看板 + 手机四通道遥控 + 五大 CLI 员工矩阵」核心定位、快速启动、手机指令速查、四阶段工单机制与安全护栏。
+- **补齐 `LICENSE`（MIT）与 `.gitignore` 加固**：严格隔离 `data/`、`config/workers.json`、`config/channels.json`、`config/*.local.json`、`.env*`、`*.log` 与 `*.tgz`；更新 `config/workers.example.json` 覆盖 5 大 CLI（默认 `disabled: "auto"` 按探测结果自动启用）。
+- **通过 `npm pack --dry-run` 打包体检与全新空目录零配置启动验证**。
+
+### 验证
+
+- 新增 `test/v100.test.mjs`，覆盖 `bin/cyber-foreman.mjs --help/--version`、兼容入口 `bin/dsh-agent-hub.mjs`、`bin/cyber-foreman-mcp.mjs` STDIO 端到端转发与全新空目录零配置启动；全量 `npm run check` 与 `npm test` 全部通过（0 失败）。
+
+---
+
+## 0.9.5 — 2026-11-22
+
+**主题：升级为完全独立运行的本地多 Agent 调度中台，扩展 QQ / 合规微信与企业微信通道，补齐主动通知推送、模板全功能编辑与中断批量重派。**
+
+### 新增
+
+- **前端重塑设计备忘录（`docs/ui-inspiration.md`）**：沉淀从 T3 Code、AionUi、VibeValley、Star-Office-UI 吸收的双视图切换、右侧产物实时预览、任务中途 Handoff、可选 Git Worktree 隔离与每日工作小记蓝图。
+- **QQ 官方机器人通道（`src/channels/qq.mjs`）**：接入 QQ 开放平台 AppID + ClientSecret WebSocket 长连接模式（无需公网 IP），支持私聊/群 `@`/频道 `@` 消息归一化与去重，完整复用 `/员工`、`/派`、`/换`、`/状态` 等指令。
+- **合规微信 & 企业微信通道（`src/channels/wechat.mjs`、`src/channels/wecom.mjs`）**：
+  - 微信采用本地合规扫码/桌面桥接模式（参考 AionUi，不使用易封号的逆向协议），支持健康检查、轮询收消息与发送回复。
+  - 企业微信支持官方群机器人 Webhook（免公网主动推送）与本地合规插件桥接两种模式。
+  - 新增 `clientSecret`、`bridgeToken`、`webhookUrl` 全程掩码与日志脱敏规则（`src/channels/secrets.mjs`），同步补齐 `public/panel-channels.js` 表单渲染与 `config/channels.example.json`。
+- **多通道主动通知推送**：5 个通道均支持 `notifyEnabled` 开关；网页/MCP 派发的主任务完成或落入「等你」（失败/中断/卡住）时，自动向已启用并打开通知的绑定通道推送结果摘要或卡点原因，且同一状态绝不重复刷屏。
+- **模板全功能编辑**：面板模板芯片新增「✎」编辑入口与编辑弹窗（支持改名、改提示词、修改或清空默认员工与工作目录，走 `PUT /api/templates/:id`）。
+- **重启中断任务一键批量重派**：新增 `AgentHub.retryInterruptedTasks()`、`POST /api/tasks/retry-interrupted` 与面板任务流顶部「一键重派中断任务」按钮。
+
+### 优化
+
+- **独立中台定位**：重构 `README.md` 与 `docs/mcp-integration.md`，以「独立启动本地服务 + 独立网页工作台 + WorkBuddy/豆包工作 MCP 桥接」作为第一顺位用法，将 DSH 插件调整为可选附录。
+- **MCP 断连友好提示**：本地 `127.0.0.1:4647` 未启动时，`dsh-agent-hub-mcp` 向 WorkBuddy / 豆包工作返回清晰中文启动指引与 `hint` 字段，不暴露原始网络堆栈。
+
+### 验证
+
+- 新增 `test/v095.test.mjs`（mock 本地 HTTP / WebSocket / 假 CLI），全量覆盖 QQ 通道、合规微信/企业微信、多通道主动通知、MCP 断连提示、模板编辑与中断批量重派；`npm run check` 与 `npm test` 全部通过（零外网请求、零模型额度消耗）。
+
+---
+
+## 0.9.0 — 2026-11-22
+
+**主题：修复 Antigravity 派活/模型串台/品牌统一三项缺陷，并新增 `kimi-cli` 与 `doubao-cli` 适配器矩阵。**
+
+### 修复
+
+- **Antigravity (`agy-cli`) 派活与无头拦截处理**：
+  - 核对本机 `agy.exe --help` 参数规范，过滤非法 `--effort`，只读侧问强制 `--mode plan`，绝不静默跳过权限。
+  - 补齐 `init`、`step_update`（工具调用进度与报错）及 `result.usage` 归一化（`fromAgy`）。
+  - 修复无头模式下因权限拦截（`denied_actions` / `no output produced`）返回空正文却误标 `completed` 的问题：现在明确标错并给出中文排查与切换 `auto` 模式指引。
+- **模型候选严格按员工类型隔离 + 实时刷新**：
+  - `src/models.mjs` 改为按 `kind` 严格隔离，彻底杜绝 Claude 的 `deepseek-flash` 等配置串台到 Codex / Antigravity / Kimi / Doubao。
+  - 新增 Antigravity 本地配置（`~/.gemini/antigravity-cli/settings.json`）与 `agy models` 探针解析；`GET /api/models?refresh=1` 支持绕过缓存实时重读本机配置。
+  - 派活区与员工表单均在模型框旁增加「刷新」按钮，支持自由手输自定义模型名，并加入防竞态序号与切换员工/类型自动清旧值。
+- **统一品牌名称**：前端界面、`src/adapters/agy.mjs`、配置、文档与测试中的「反重力」全部统一为 `Antigravity`。
+
+### 新增
+
+- **首批新增 CLI 适配器矩阵**：新增 `src/adapters/kimi.mjs`（`kimi-cli`）与 `src/adapters/doubao.mjs`（`doubao-cli`），注册进 `src/adapters/index.mjs`；`src/adapters/shared.mjs` 增加可选 `onPlainLine` 钩子以兼容纯文本与 JSONL 两种输出。
+- **本机自动探测升级**：`src/fsutil.mjs` 的 `CLI_PROBES` 扩展支持 `kimi-cli` 与 `doubao-cli` 路径探测。
+
+### 验证
+
+- 新增 `test/adapters-agy.test.mjs`、`test/adapters-kimi-doubao.test.mjs` 并扩展 `test/models.test.mjs`，全量 `npm run check` 与 `npm test` 通过（零真实模型额度消耗）。
+
+---
+
+## 0.8.5 — 2026-11-22
+
+**主题：标准 STDIO MCP 双向枢纽化 + 激活 Antigravity (`agy`) 自动探测。**
+
+### 新增
+
+- **演进路线图**：根目录新增 `ROADMAP.md`，明确 `v0.8.5 → v0.9.0 → v0.9.5 → v1.0.0` 四阶段里程碑与安全红线。
+- **标准 STDIO MCP Server 入口（`bin/dsh-agent-hub-mcp.mjs`、`src/mcp/server.mjs`）**：
+  - 在 `package.json#bin` 注册 `dsh-agent-hub-mcp`，引入 `@modelcontextprotocol/sdk` 的 `StdioServerTransport`，支持环境变量 `DSH_HUB_URL`（默认 `http://127.0.0.1:4647`）。
+  - 保持薄转发设计，所有调用仅通过本机 HTTP 转发到 Hub API，不重复实现队列、状态机，不接触账号凭证。
+  - 暴露 5 个带中英双语说明的核心 MCP Tools：`list_workers`、`dispatch_task`、`get_task_status`、`say_to_task`（支持 `auto`/`steer`/`side`）、`cancel_task`。
+- **AGY（Antigravity）命令行自动探测**：
+  - 升级 `src/fsutil.mjs`，新增可扩展的 `CLI_PROBES`、`resolveCommand()`、`detectCliCommand()`、`detectInstalledClis()`，将 `agy` 纳入 PATH + 已知安装路径自动探测（同步为 `v0.9.0` 接入 `kimi-cli` / `doubao-cli` 预留统一接口）。
+  - `src/adapters/agy.mjs`、`src/workers-store.mjs` 与 `GET /api/adapters` 接入自动探测结果；`config/workers.json` 与 `config/workers.example.json` 移除 `agy-main` 的默认停用配置，本机检测到 `agy` 时默认启用。
+  - 更新 `README.md`，移除「反重力默认停用」旧说明并补充路线图与 MCP 文档入口。
+- **桌面端 MCP 接入文档**：新增 `docs/mcp-integration.md`，提供 WorkBuddy 桌面端、豆包工作桌面端、Claude Code / Cursor 的标准 JSON 配置示例。
+
+### 验证
+
+- 新增 `test/mcp.test.mjs`（mock 本地 HTTP 服务 + 真实子进程 STDIO MCP 客户端端到端校验 `tools/list` 与全部 5 个 `tools/call`）与 `test/cli-detect.test.mjs`（校验 `agy` 自动探测、默认启用与 `/api/adapters` 探测字段）。
+- `npm run check` 与 `npm test` 全部通过，无真实模型额度消耗。
 
 ---
 
@@ -8,17 +110,17 @@
 
 **主题：手机上能挑人干活。这一版之后封版，不再往 0.8 加功能。**
 
-起因：Telegram 通道测通了，但绑定里没指定员工，所以手机发的每一个活都落到第一个启用员工身上。这台机器有 4 个员工，各自绑着不同项目目录和职责（总经理、审核、抖音下载开发、便签重构员），手机上却只能喊到第一个。
+起因：Telegram 通道测通了，但绑定里没指定员工，所以手机发的每一个活都落到第一个启用员工身上。本机有 4 个员工，各自绑着不同项目目录和职责（总经理、审核、前端开发、文档重构员），手机上却只能喊到第一个。
 
 ### 新增
 
 - **`/员工`**：列出 4 个带编号的员工 —— 编号、名字、备注里的职责、工作目录、停用或命令找不到的状态，★ 标出这个会话现在派给谁。手机上看一眼就知道该喊谁。
-- **`/派 @3 任务内容`**：临时把这一件派给 3 号，**不改会话默认**；回执写明「这次是临时指定，会话默认还是谁」。也支持按名字或职责点名（`@抖音`、`@便签`、`@总经理`、`@审核` 都能命中）。
+- **`/派 @3 任务内容`**：临时把这一件派给 3 号，**不改会话默认**；回执写明「这次是临时指定，会话默认还是谁」。也支持按名字或职责点名（`@前端`、`@重构`、`@总经理`、`@审核` 都能命中）。
 - **`/换 3`**：改会话默认，编号或名字都行。原来只能打完整中文名，现在打编号就行。
 
 ### 修掉一个会串项目的坑
 
-`/换` 原来只改员工、不改工作目录。这 4 个人的目录各不相同，一旦绑定里配过目录，切到「抖音下载开发」却还在总经理的目录里干活，任务就会串到别的项目。现在：
+`/换` 原来只改员工、不改工作目录。这 4 个人的目录各不相同，一旦绑定里配过目录，切到「前端开发」却还在总经理的目录里干活，任务就会串到别的项目。现在：
 
 - `/换` 换人时把目录一起换成本人的目录，回执里也会写出这个目录；
 - `/派 @3` 临时点名时**干脆不传目录**，让 Hub 用 3 号自己配置里的目录。
@@ -195,7 +297,7 @@ CLI 报的金额既是估算、又是会话累计，按天加总会重复计算�
 
 ### 修复
 
-- **换员工类型后启动命令没跟着换**：先选 Codex（自动填了 `node`）再改成 Claude，命令还留着 `node`，面板显示「可用」，一派活就失败。现在切类型会自动换成新类型那套启动方式，载入配置时也会自愈这类坏数据。你之前建的「抖音下载开发」就是这么坏的，现在已被自动修成 `claude.exe`。
+- **换员工类型后启动命令没跟着换**：先选 Codex（自动填了 `node`）再改成 Claude，命令还留着 `node`，面板显示「可用」，一派活就失败。现在切类型会自动换成新类型那套启动方式，载入配置时也会自愈这类坏数据（旧配置里的坏员工会被自动修复为对应 CLI 命令）。
 - **前端提交时不带启动参数**：导致新建的 Codex 员工只拿到 `node`、没有入口脚本。现在 `argsPrefix` 随类型一起提交。
 
 ### 验证

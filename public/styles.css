@@ -304,8 +304,11 @@ body[data-side="collapsed"] .side-head { flex-direction: column; padding: 9px 6p
 }
 .template-chip:hover { background: var(--teal-soft); border-color: #c4e8dc; }
 .template-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.template-chip-edit { color: var(--faint); font-size: 11px; line-height: 1; padding: 0 2px; }
+.template-chip-edit:hover { color: var(--teal); }
 .template-chip-remove { color: var(--faint); font-size: 13px; line-height: 1; padding: 0 1px; }
 .template-chip-remove:hover { color: var(--red); }
+.flow-head-actions { display: flex; align-items: center; gap: 10px; }
 
 textarea, input[type="text"], input[type="number"], select {
   width: 100%;
@@ -325,9 +328,12 @@ select { height: 32px; padding: 0 7px; }
 .field { display: flex; flex-direction: column; gap: 3px; min-width: 140px; }
 .field > span { color: var(--muted); font-size: 11px; }
 .field.grow { flex: 1; min-width: 200px; }
-.field.model-field { width: 148px; }
+.field.model-field { width: 214px; }
 .field.worker-field { width: 196px; }
 .field input, .field select { height: 32px; }
+.model-row { display: flex; align-items: center; gap: 6px; }
+.model-row input { flex: 1; min-width: 0; }
+.model-row button { flex-shrink: 0; height: 32px; padding: 0 9px; }
 .field small { color: var(--faint); font-size: 11px; line-height: 1.4; min-height: 14px; }
 .check { display: flex; align-items: center; gap: 6px; height: 32px; color: var(--muted); font-size: 12px; white-space: nowrap; }
 .check input { accent-color: var(--teal); }

@@ -35,10 +35,10 @@ function makeConfigStore() {
   };
 }
 
-test("通道配置仓库：4 个通道、改配置落盘、重开还在", () => {
+test("通道配置仓库：5 个通道、改配置落盘、重开还在", () => {
   const ctx = makeConfigStore();
   try {
-    assert.deepEqual(CHANNEL_IDS, ["telegram", "feishu", "wecom", "wechat"]);
+    assert.deepEqual(CHANNEL_IDS, ["telegram", "feishu", "qq", "wecom", "wechat"]);
     for (const id of CHANNEL_IDS) {
       const config = ctx.store.get(id);
       assert.ok(config, `${id} 应该有默认配置`);
@@ -640,7 +640,7 @@ async function startChannelHub(context) {
   return `http://127.0.0.1:${context.server.address().port}`;
 }
 
-test("通道接口：4 个通道、secret 恒掩码、掩码回传不覆盖、配对码与白名单落盘", async () => {
+test("通道接口：5 个通道、secret 恒掩码、掩码回传不覆盖、配对码与白名单落盘", async () => {
   const directory = tempDir("agent-hub-channel-http-");
   const config = {
     port: 0,
@@ -667,7 +667,7 @@ test("通道接口：4 个通道、secret 恒掩码、掩码回传不覆盖、�
   try {
     const list = await call("/api/channels");
     assert.equal(list.status, 200);
-    assert.equal(list.body.channels.length, 4);
+    assert.equal(list.body.channels.length, 5);
     assert.deepEqual(list.body.channels.map((item) => item.id), CHANNEL_IDS);
     const telegram = list.body.channels.find((item) => item.id === "telegram");
     assert.equal(telegram.config.token, "");
@@ -678,11 +678,15 @@ test("通道接口：4 个通道、secret 恒掩码、掩码回传不覆盖、�
     assert.equal(telegram.status.state, telegram.state);
     assert.ok(Array.isArray(telegram.chats));
     assert.equal(typeof telegram.pairCode, "object");
+    const qq = list.body.channels.find((item) => item.id === "qq");
+    assert.equal(qq.implemented, true);
+    assert.equal(qq.readiness, "ready");
     const wecom = list.body.channels.find((item) => item.id === "wecom");
-    assert.equal(wecom.implemented, false);
-    assert.equal(wecom.readiness, "needs-public");
+    assert.equal(wecom.implemented, true);
+    assert.equal(wecom.readiness, "ready");
     const wechat = list.body.channels.find((item) => item.id === "wechat");
-    assert.equal(wechat.readiness, "unsupported");
+    assert.equal(wechat.implemented, true);
+    assert.equal(wechat.readiness, "ready");
 
     // 改 token：响应恒掩码
     const saved = await call("/api/channels/telegram", { method: "PUT", body: { token: TOKEN } });
@@ -723,12 +727,12 @@ test("通道接口：4 个通道、secret 恒掩码、掩码回传不覆盖、�
     const missing = await call(`/api/channels/telegram/allowlist/${encodeURIComponent("tg:none")}`, { method: "DELETE" });
     assert.equal(missing.status, 404);
 
-    // 占位通道：不能启用、测试连接给出原因
+    // 未填 Webhook 时测试企业微信给出清晰指引
     const tested = await call("/api/channels/wecom/test", { method: "POST", body: {} });
     assert.equal(tested.status, 200);
     assert.equal(tested.body.ok, false);
-    assert.match(tested.body.message, /公网回调/);
-    assert.match(tested.body.error, /公网回调/, "失败时 error 与 message 同值，面板直接用 error");
+    assert.match(tested.body.message, /Webhook/);
+    assert.match(tested.body.error, /Webhook/, "失败时 error 与 message 同值，面板直接用 error");
     assert.equal(typeof tested.body.status.state, "string");
 
     const chats = await call("/api/channels/wecom/chats");
@@ -856,8 +860,8 @@ test("subscribe 只在 status/stage 变化时回调", () => {
 const FOUR_WORKERS = [
   { id: "claude-main", name: "Claude 主员工", note: "总经理", cwd: "C:\\work\\main", enabled: true, available: true },
   { id: "codex-main", name: "Codex 员工", note: "审核", cwd: "C:\\work\\main", enabled: true, available: true },
-  { id: "claude-2", name: "抖音下载开发", note: "抖音下载插件开发", cwd: "E:\\workPM\\抖音下载开发", enabled: true, available: true },
-  { id: "claude-1", name: "便签重构员", note: "", cwd: "C:\\work\\scratchpad", enabled: true, available: true },
+  { id: "claude-2", name: "前端开发", note: "前端插件开发", cwd: "C:\\work\\frontend-app", enabled: true, available: true },
+  { id: "claude-1", name: "文档重构员", note: "", cwd: "C:\\work\\scratchpad", enabled: true, available: true },
 ];
 
 test("选员工：只有 @ 才认作点名，裸数字仍是正文；/员工 是新命令", () => {
@@ -866,9 +870,9 @@ test("选员工：只有 @ 才认作点名，裸数字仍是正文；/员工 是
   assert.equal(byIndex.workerSelector, "3");
   assert.equal(byIndex.text, "整理 README");
 
-  const byName = parseIntent("/派 @抖音 下载封面", { tasks: [] });
-  assert.equal(byName.workerSelector, "抖音");
-  assert.equal(byName.text, "下载封面");
+  const byName = parseIntent("/派 @前端 调整样式", { tasks: [] });
+  assert.equal(byName.workerSelector, "前端");
+  assert.equal(byName.text, "调整样式");
 
   const plain = parseIntent("/派 2 个文件里的错字", { tasks: [] });
   assert.equal(plain.workerSelector, undefined, "裸数字绝不能被吞掉");
@@ -891,9 +895,9 @@ test("选员工：/员工 列编号、职责、目录，★ 标当前默认", as
     const reply = ctx.texts().at(-1);
     assert.match(reply, /现在有 4 个员工/);
     assert.match(reply, /★ 1\. Claude 主员工/);
-    assert.match(reply, /3\. 抖音下载开发/);
+    assert.match(reply, /3\. 前端开发/);
     assert.match(reply, /总经理/);
-    assert.match(reply, /E:\\workPM/);
+    assert.match(reply, /C:\\work\\frontend-app/);
     assert.match(reply, /\/派 @3/);
     assert.match(reply, /\/换 3/);
   } finally {
@@ -913,7 +917,7 @@ test("选员工：/派 @3 临时点名，不改默认、不沿用会话目录", 
     assert.equal(ctx.hub.calls.dispatch[0].cwd, undefined, "临时点名不能带上默认员工的目录");
     assert.equal(ctx.configStore.findBinding("tg:1").entry.workerId, "claude-main", "默认不能被改掉");
     const reply = ctx.texts().at(-1);
-    assert.match(reply, /抖音下载开发/);
+    assert.match(reply, /前端开发/);
     assert.match(reply, /临时指定/);
     assert.match(reply, /默认还是/);
   } finally {
@@ -926,7 +930,7 @@ test("选员工：@名字 / @职责 模糊匹配；点错编号和空任务都�
   try {
     ctx.configStore.upsertBinding("telegram", { chatId: "tg:1", workerId: "claude-main" });
 
-    await ctx.router.handle({ channelId: "telegram", chatId: "tg:1", text: "/派 @便签 重构列表" });
+    await ctx.router.handle({ channelId: "telegram", chatId: "tg:1", text: "/派 @重构 重构列表" });
     assert.equal(ctx.hub.calls.dispatch[0].workerId, "claude-1");
     assert.equal(ctx.hub.calls.dispatch[0].cwd, undefined);
 
@@ -956,14 +960,14 @@ test("选员工：/换 3 改默认，工作目录跟着员工走，不串项目"
     await ctx.router.handle({ channelId: "telegram", chatId: "tg:1", text: "/换 3" });
     const entry = ctx.configStore.findBinding("tg:1").entry;
     assert.equal(entry.workerId, "claude-2");
-    assert.equal(entry.cwd, "E:\\workPM\\抖音下载开发", "不能沿用上一个员工的目录");
+    assert.equal(entry.cwd, "C:\\work\\frontend-app", "不能沿用上一个员工的目录");
     assert.match(ctx.texts().at(-1), /以后这个会话派给/);
     assert.match(ctx.texts().at(-1), /工作目录已跟着改/);
 
     // 换完之后不带 @ 派活，就该用 3 号自己的目录。
     await ctx.router.handle({ channelId: "telegram", chatId: "tg:1", text: "/派 继续整理" });
     assert.equal(ctx.hub.calls.dispatch[0].workerId, "claude-2");
-    assert.equal(ctx.hub.calls.dispatch[0].cwd, "E:\\workPM\\抖音下载开发");
+    assert.equal(ctx.hub.calls.dispatch[0].cwd, "C:\\work\\frontend-app");
     assert.doesNotMatch(ctx.texts().at(-1), /临时指定/, "不带 @ 就不该说是临时指定");
   } finally {
     ctx.cleanup();

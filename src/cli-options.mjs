@@ -208,11 +208,11 @@ export function canListen(port, host = DEFAULT_HOST) {
 
 /** 全中文帮助。 */
 export function helpText(version = "") {
-  const title = version ? `DSH Agent Hub v${version}` : "DSH Agent Hub";
+  const title = version ? `CyberForeman（赛博包工头） v${version}` : "CyberForeman（赛博包工头）";
   return [
     title,
     "",
-    "用法：dsh-agent-hub [参数]",
+    "用法：cyber-foreman [参数]（兼容别名：dsh-agent-hub）",
     "",
     "参数：",
     "  --port <端口>       监听端口，默认 4647；被占用会自动往后试；--port 0 交给系统分配",
@@ -228,8 +228,11 @@ export function helpText(version = "") {
     "也认环境变量：AGENT_HUB_PORT / AGENT_HUB_HOST / AGENT_HUB_DATA_DIR / AGENT_HUB_CONFIG",
     "",
     "例子：",
-    "  npx @local/dsh-agent-hub",
-    "  npx @local/dsh-agent-hub --port 4700 --data-dir D:\\hub-data",
-    "  AGENT_HUB_PORT=4700 dsh-agent-hub --no-channels",
+    "  npx cyber-foreman",
+    "  npx cyber-foreman --port 4700 --data-dir D:\\foreman-data",
+    "  AGENT_HUB_PORT=4700 cyber-foreman --no-channels",
+    "",
+    "MCP STDIO 入口（供 WorkBuddy / 豆包工作 / Claude Desktop / Cursor 接入）：",
+    "  npx cyber-foreman-mcp",
   ].join("\n");
 }

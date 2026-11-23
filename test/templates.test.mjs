@@ -98,9 +98,9 @@ test("路径里多余的重复分隔符会被合并，UNC 路径保持原样", (
     const messy = ctx.store.create({
       name: "双斜杠",
       prompt: "测试路径",
-      cwd: "E://workPM//抖音下载开发",
+      cwd: "C://work//frontend-app",
     });
-    assert.equal(messy.cwd, "E:/workPM/抖音下载开发");
+    assert.equal(messy.cwd, "C:/work/frontend-app");
 
     const unc = ctx.store.create({
       name: "网络盘",

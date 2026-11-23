@@ -33,6 +33,7 @@ export const state = {
   refreshing: false,
   cwdInitialized: false,
   editingWorkerId: null,
+  editingTemplateId: null,
   /** 员工下拉的复用签名，没变化就不重建 DOM。 */
   selectSignature: "",
   projectsSignature: "",
@@ -100,6 +101,7 @@ export const SOURCE_TEXT = {
   panel: "面板",
   telegram: "Telegram",
   feishu: "飞书",
+  qq: "QQ",
   wecom: "企业微信",
   wechat: "微信",
 };

@@ -1,186 +1,173 @@
-# DSH Agent Hub
+# CyberForeman（赛博包工头）
 
-DSH 当总调度，独立 Hub 管队列和结果，命令行 Agent 当员工。当前接入：**Claude**、**Codex**、**反重力（Antigravity，默认停用：账号地区受限）**。
+> **打工人上班已经够累了，是时候从「一线搬砖」晋升成「赛博包工头」了。**
+>
+> 把 Claude Code、Codex、Antigravity、Kimi CLI、豆包 CLI 统统收编成你的本地 AI 施工队：统一派单、盯场监工、随时插话返工、验收拿结果——脏活累活交给底层 Agent 班组去卷，你只管坐镇总控台当甲方拍板。
 
-新增员工的完整说明见 `CHANGELOG.md` 与面板上的「+ 新增员工」。
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+[![Node.js >= 22](https://img.shields.io/badge/Node.js-%3E%3D22-brightgreen.svg)](https://nodejs.org/)
+[![Version 1.0.0](https://img.shields.io/badge/version-1.0.0-blue.svg)](./CHANGELOG.md)
 
-## 任务中对话
+---
 
-任务在跑时可以在右栏直接说话，不用等它结束：
+## 为什么做 CyberForeman？
 
-- **插话**：把新要求追加到正在跑的员工进程，会改变这次任务的走向。目前只有 Claude CLI 支持，要先在员工设置里打开「允许插话」。
-- **侧问**：另起一条只读任务问一句，不打断主任务、不改文件、也不会冲掉主任务的会话记忆。
-- **Enter 默认走 `auto`**：能插就插，插不进去自动降级成侧问；对着侧问结果按 Enter 就是「继续追问」，新侧问仍挂在原主任务下面。
+装了三五个 AI 编程 CLI 之后，日常工作反而变碎了：
+- 电脑上开着五六个终端窗口，哪个在跑、哪个卡死、哪个写完全靠肉眼切屏；
+- 离开工位想让家里的 CLI 顺手跑个巡检、修个 Bug，回来还得翻半天日志；
+- 想让桌面端主控（WorkBuddy / 豆包工作 / Claude Desktop / Cursor）统筹多个本地 CLI 分工协作，彼此却互不认识。
 
-接口统一是 `POST /api/tasks/:id/say`，带 `text` 与 `mode`（`auto` / `steer` / `side`）。判定规则只在后端一处，网页和手机消息走同一套。
-
-## 手机里选员工
-
-TG 通道绑定之后，默认会把活派给第一个启用员工。想换人，在手机里发：
+**CyberForeman（赛博包工头）** 是一个**完全独立运行的本地多 Agent 调度中枢**——不绑定任何单一宿主，只做一件事：**让你像包工头管班组一样，在一个总控台里调度本机所有 AI CLI。**
 
 ```text
-/员工              列编号、职责、目录，★ 是当前默认
-/派 @3 整理素材    临时派给 3 号，不改默认
-/换 3              把这个会话的默认改成 3 号
+  WorkBuddy / 豆包工作 / Claude Desktop / Cursor（桌面主控 · STDIO MCP）
+                        │
+   独立网页看板 ────────┼─────── 手机四通道遥控（Telegram / 飞书 / QQ / 微信）
+  (127.0.0.1:4647)      ▼
+          ┌───────────────────────────────┐
+          │  CyberForeman · 本地调度中枢   │
+          │  队列 · 串行锁 · 会话隔离 · 重试 │
+          └───────────────┬───────────────┘
+      ┌─────────┬─────────┼─────────┬─────────┐
+      ▼         ▼         ▼         ▼         ▼
+  Claude Code  Codex  Antigravity  Kimi CLI  豆包 CLI
 ```
 
-编号也能换成名字或职责片段（`@抖音`、`@便签`、`@总经理`、`@审核` 都行）。临时点名时，工作目录用那个员工自己的，不会串到别的项目；`/换` 换人时目录也一起跟着换。
+---
 
-## 工单阶段
+## 核心特性
 
-面板只看四个阶段，比原始 `status` 更接近「我现在要不要动手」：
+- **跨桌面端 MCP 调度枢纽**：内置超薄标准 STDIO MCP 入口（`cyber-foreman-mcp`），一键接入 **WorkBuddy 桌面端 / 豆包工作桌面端 / Claude Desktop / Cursor**，让桌面主控 Agent 直接拆解需求、挑选空闲员工并收回成果。
+- **零构建独立网页看板**：浏览器打开 `http://127.0.0.1:4647` 即用——按项目目录分组管理员工、四阶段工单流、任务模板全功能编辑、运行中流式插话与只读侧问、重启中断任务一键批量复工。
+- **手机四通道遥控 + 主动汇报**：支持 **Telegram / 飞书 / QQ 官方 Bot（WebSocket 无需公网 IP）/ 合规微信本地桥接 & 企业微信 Webhook**；任务完成或失败卡住落入「等你」时，自动把结果摘要推到手机（每通道独立开关）。
+- **五大 CLI 员工矩阵**：开箱自动探测本机已安装的 **Claude Code (`claude-cli`)**、**Codex (`codex-cli`)**、**Antigravity (`agy-cli`)**、**Kimi CLI (`kimi-cli`)**、**豆包 CLI (`doubao-cli`)**；模型候选列表按员工类型严格隔离，支持实时刷新与自定义手输。
+- **静默后台常驻（不丢服务）**：Windows 双击 `start-hub.bat` 自动后台常驻、关窗不断流，随时双击 `stop-hub.bat` 干净停机。
+- **数据完全本地、安全护栏内置**：默认仅监听 `127.0.0.1:4647`，防 DNS Rebinding、绝不转发账号凭证、保留各 CLI 原生沙箱边界、通道密钥全程掩码脱敏。
 
-| 阶段 | 包含的原始状态 | 含义 |
-|---|---|---|
-| **在跑** | `running` / `retrying` / `cancelling` | 机器在干，含自动重试等待，不用管 |
-| **等你** | `failed` / `interrupted` / `waiting` | 卡在人身上：重试耗尽、Hub 中断、员工求助 |
-| **队列里** | `queued` | 排着，还没轮到 |
-| **已结束** | `completed` / `cancelled` / 已标记处理 | 完成或已收尾 |
+---
 
-「等你」里的任务有两个出口：**重新派发**（额度重置再跑一次）或**已处理**（不改状态，只移出等你）。
-`stage` 由服务端派生，不写盘；接口用 `GET /api/tasks?stage=waiting`。
+## 快速启动
 
-## 失败自动重试
+环境要求：**Node.js >= 22**。
 
-员工配置里写 `retry` 就启用，不写就不重试（**面板新建的员工默认写 3 次**）：
+### 方式 1：克隆仓库本地运行（当前推荐）
 
-```json
-"retry": { "maxAttempts": 3, "baseDelayMs": 3000, "maxDelayMs": 60000 }
-```
-
-- 间隔按 3s → 6s → 12s 递增，封顶 60s。
-- 重试使用**全新会话**：上一次可能停在半截，续接容易原地复发同一个错误。
-- **配置类错误不重试**（命令不存在、员工停用、类型不支持），直接进「等你」。
-- 重试耗尽才落 `failed`，面板上就是「等你」，由人决定重派还是收掉。
-
-## 结构
-
-- `src/server.mjs`：本地 Hub，只监听 `127.0.0.1:4647`
-- `src/hub.mjs`：任务队列、状态机、停止、会话续接、自动重试
-- `src/store.mjs`：任务持久化与阶段派生（`stageOf`）
-- `src/workers-store.mjs`：员工配置的校验、落盘与热加载
-- `src/fsutil.mjs`：命令探测、盘符/目录枚举、路径检查
-- `src/adapters/`：员工适配器与注册表
-  - `claude.mjs`、`codex.mjs`、`agy.mjs`
-  - `index.mjs`：按 `kind` 查适配器；新增类型在这里加一行
-  - `shared.mjs`：三种 CLI 共用的启动、逐行解析与收尾
-- `plugin/index.mjs`：DSH 工具（派活、列表、结果、停止、重派）
-- `plugin/client.mjs`：DSH 左侧 Agent Hub 面板
-- `public/`：独立网页工作台（三栏），拆成 `app.js` / `panel-common.js` / `panel-workbench.js` / `panel-talk.js` / `panel-channels.js`
-- `src/channels/`：手机消息通道。Telegram（long polling）、飞书（WebSocket 长连接）已可用；企业微信、个人微信只留接口位
-- `src/routes/channels.mjs`：通道配置、配对码、绑定、测试连接接口
-- `bin/dsh-agent-hub.mjs`：命令行 / 未来 npx 入口；`src/cli-options.mjs` + `src/config.mjs` 负责参数与路径解析
-- `tools/launch.mjs` + `start-hub.bat` + 桌面 bat：双击启动链路
-- `config/workers.json`：员工与工作目录配置
-- `data/`：任务、日志、会话号，只保存在本机
-- `CHANGELOG.md`：版本更新日志
-- `INSTALL.md`：DSH 插件安装步骤
-
-## 启动 Hub
-
-**最省事：双击桌面上的「启动 Agent Hub.bat」。** 会弹出一个黑色窗口并自动打开面板。这个窗口不要关——关掉窗口就是停止服务，手机上就派不了活了。
-
-也可以在命令行里手动启动：
-
-```powershell
-cd "E:\workPM\dsh-agent-hub"
+```bash
+git clone https://github.com/adrianzeng/cyber-foreman.git
+cd cyber-foreman
+npm install
 npm start
 ```
 
-`npm start` 和双击走的是同一个入口（`bin/dsh-agent-hub.mjs`），也是以后 `npx dsh-agent-hub` 那条路。想换端口或数据目录：
+Windows 一键后台常驻（适合录屏与全天挂机，关掉终端也不会断服务）：
+- 启动：双击根目录的 [start-hub.bat](./start-hub.bat)（或运行 `npm run start:bg`），黑框 2 秒自动关闭并自动打开 `http://127.0.0.1:4647`。
+- 停止：双击 [stop-hub.bat](./stop-hub.bat)（或运行 `npm run stop`）。
 
-```powershell
-npm run cli -- --port 4648 --data-dir "D:\my-hub-data"
+### 方式 2：npx / CLI 参数启动
+
+```bash
+npx cyber-foreman --open
+npx cyber-foreman --port 4700 --data-dir D:\foreman-data
+npx cyber-foreman --no-channels
+npx cyber-foreman --help
 ```
 
-保持窗口运行，然后打开：
+> 向后兼容：旧命令名 `dsh-agent-hub` 与 `dsh-agent-hub-mcp` 继续保留转发，既有配置无需修改即可无缝过渡。
 
-```text
-http://127.0.0.1:4647
-```
+首次在全新目录启动时**无需任何预配置文件**，中枢会自动初始化数据目录并探测本机已安装的 CLI；打开 `http://127.0.0.1:4647` 点左上角 `+` 即可招募员工。批量配置示例见 [config/workers.example.json](./config/workers.example.json) 与 [config/channels.example.json](./config/channels.example.json)。
 
-## 挂到 DSH
+---
 
-先用临时 overlay 试，不改现有 DSH 配置。另开一个终端：
+## 桌面端 MCP 接入（WorkBuddy / 豆包工作 / Claude Desktop / Cursor）
 
-```powershell
-dsh web --patch "E:\workPM\dsh-agent-hub\cordis.local.yml"
-```
-
-`cordis.local.yml` 里的插件路径必须是绝对路径。稳定使用时可把 `cordis.patch.yml` 通过 `dsh plugin --profile web add` 安装进 profile；安装前先看下一节。
-
-## 安全边界
-
-- Hub 只接受本机回环地址，不接受外部网络访问。
-- Claude 默认使用 `acceptEdits`，并设置 `--permission-prompts none`：可以改文件，需要人工批准的命令会被拒绝，而不是自动给全权限。
-- 没有使用 `--dangerously-skip-permissions`。
-- Codex 用 `workspace-write` + 自动审批：只能改工作目录，不出沙箱。
-- 自动重试只在进程/接口失败时触发，不会重复执行已经成功的任务；重试次数有上限（默认 3 次）。
-- 每个任务有独立工作目录，建议不要让两个任务同时改同一批文件。
-- 停止任务会结束员工进程树，但不会回滚已经写入的文件。
-- 任务内容和结果保存在 `data/`，不会上传网络；DSH 只通过本机 HTTP 读取。
-
-## 测试
-
-```powershell
-npm test
-```
-
-测试使用假 CLI，不消耗任何模型额度，覆盖：完成、失败、停止后队列续跑、排队取消、会话续接、工单阶段与标记已处理、自动重试成功、重试耗尽后人工重派、配置类错误不重试、员工增删改与校验、目录选择接口、配置分层重启、HTTP 接口（含阶段筛选与重派/已处理）。
-
-## 在面板里加员工（不用改文件）
-
-1. 点右上角「+ 新增员工」。
-2. 填名字，选类型（Claude / Codex / 反重力）。
-3. 点「选择目录」→ 选盘符（C/D/E 都行）→ 进到项目文件夹；没有就现场「新建」。
-4. 需要的话再填「附加目录」，把另一个盘上的素材挂进来。
-5. 保存，**立刻生效**，不用重启 Hub。
-
-员工按项目目录分组显示，每个项目一组，可以「+ 在这里加员工」「打开目录」。
-停用只挡新任务；删除前要先停掉它在跑或排队的任务。
-
-## 配置分层
-
-- `config/workers.json`：**种子模板**，只在第一次启动、`data/workers.json` 不存在时用来初始化。升级不会覆盖你的员工。
-- `data/workers.json`：**运行时真配置**，面板改的就是它。想手工备份/迁移，复制这个文件即可。
-
-`config/workers.json` 里还保留 `port`、`dataDir` 两项，属于启动参数，不随面板变化。
+保持本地 CyberForeman 后台运行（默认 `http://127.0.0.1:4647`），在任意支持 STDIO MCP 的桌面端加入以下配置：
 
 ```json
 {
-  "port": 4647,
-  "dataDir": "./data",
-  "workers": {
-    "claude-main": {
-      "name": "Claude 主员工",
-      "kind": "claude-cli",
-      "command": "C:\\Users\\YOUR_NAME\\.local\\bin\\claude.exe",
-      "cwd": "C:\\path\\to\\workspace",
-      "permissionMode": "acceptEdits",
-      "addDirs": [],
-      "retry": { "maxAttempts": 3, "baseDelayMs": 3000, "maxDelayMs": 60000 }
+  "mcpServers": {
+    "cyber-foreman": {
+      "command": "npx",
+      "args": ["-y", "cyber-foreman-mcp"],
+      "env": {
+        "CYBER_FOREMAN_URL": "http://127.0.0.1:4647"
+      }
     }
   }
 }
 ```
 
-`cwd` 是默认工作区；派任务时可由 DSH 临时指定。
+本地源码态（免下载、毫秒启动）可直接指定脚本路径：
 
-**模型**：留空就用这个 CLI 当前配置里的模型（面板会显示具体是哪个）。模型是路由层（如 cc-switch）配的，Hub 不参与管理；填写只覆盖这一次任务。候选列表只来自三个地方：Claude 自己的 `ANTHROPIC_MODEL` 与 `ANTHROPIC_DEFAULT_*_MODEL` 别名映射、Codex 自己的 `config.toml`，**不读任何外部工具的模型库**。
+```json
+{
+  "mcpServers": {
+    "cyber-foreman": {
+      "command": "node",
+      "args": ["C:/path/to/cyber-foreman/bin/cyber-foreman-mcp.mjs"],
+      "env": {
+        "CYBER_FOREMAN_URL": "http://127.0.0.1:4647"
+      }
+    }
+  }
+}
+```
 
-**记忆**：会话按「员工 + 工作目录」记。同一个员工在同一个项目里会接着上次的对话；换一个项目目录就是全新开始。派活时勾「清空记忆」可以强制从头开始。
+暴露 5 个双语 MCP Tools：`list_workers`、`dispatch_task`、`get_task_status`、`say_to_task`（支持 `auto` / `steer` / `side`）、`cancel_task`。若本地中枢尚未启动，MCP 入口会返回清晰中文启动指引，绝不抛原始网络堆栈。完整多客户端配置见 [docs/mcp-integration.md](./docs/mcp-integration.md)。
 
-**用量**：任务详情显示本次的轮数、输出 token（含思考）、输入和缓存命中。金额只做参考——CLI 报的是**整个会话累计**、按 Claude 牌价估的，不是你实际扣费，所以今日汇总只统计 token。
+---
 
-**预算刹车**：Claude 员工可设「单任务花费上限」，超了停下落「等你」。它是每轮结束后才检查，最多会超出一轮的量，属于防跑飞而不是硬上限。Codex 不支持。
+## 手机四通道遥控速查
 
-**模板**：派活区上方可以存常用任务，点一下把提示词、员工、目录一起填好。点模板只填不派发，改完再按「派发任务」。存在 `data/templates.json`。
+在网页看板右上角点 **「通道」**，配置并启用任意通道后点击 **「生成配对码」**，在手机聊天框发送 `/绑定 6位配对码` 即可生效（配对码 10 分钟过期、用后即焚）。
 
-## 当前限制
+| 通道 | 接入方式 | 特点 |
+|---|---|---|
+| **Telegram** | Bot Token 长轮询 | 无需公网 IP，双向遥控 + 自动结果推送 |
+| **飞书** | 官方长连接 SDK（App ID + Secret） | 无需公网回调地址，支持私聊与群聊 `@` |
+| **QQ** | QQ 开放平台官方 Bot WebSocket | `AppID` + `ClientSecret`，无需公网 IP |
+| **企业微信 / 微信** | 企微官方群机器人 Webhook + 合规本地桥接 | 严格合规，绝不碰封号风险逆向协议 |
 
-- 一个员工同时只跑一个任务，其余任务排队。
-- 面板固定连接 `127.0.0.1:4647`；改端口后面板地址也要同步改。
-- Hub 重启时，正在运行或等待重试的任务会标记为 `interrupted`（落在「等你」），不会自动重跑。
-- 面板能改员工，但改端口、改数据目录仍要动 `config/workers.json` 并重启。
-- 还没有：产物归档、人优先槽位、通知推送、触发器。
-- 模板只能新建和删除，还不能改名或改内容。
+常用手机指令：
+
+| 指令 | 说明 |
+|---|---|
+| `/员工` | 列出所有员工编号、职责、绑定项目目录及状态（★ 标当前默认） |
+| `/派 任务内容` 或直接发文字 | 派给当前默认员工；若已有 1 个任务在跑则自动插话或降级只读侧问 |
+| `/派 @3 任务内容` / `/派 @前端 ...` | 临时点名某位员工干活（不改默认员工，自动切到对方项目目录） |
+| `/换 3` | 切换会话默认员工（工作目录跟着员工走，绝不串项目） |
+| `/侧问 问题` | 对当前任务发起只读问答（不改文件、不污染主会话记忆） |
+| `/任务` / `/看 1` / `/停 1` | 查看最近工单列表、详情输出或中止指定任务 |
+| `/清空` | 下一次派活清空该员工在当前目录的历史会话记忆 |
+
+---
+
+## 四阶段工单机制
+
+每一笔派出去的活，在网页看板、MCP 接口与手机推送里统一走同一套四阶段状态机：
+
+1. **队列（`queued`）**：排在对应员工的串行队列里，同一员工同一时刻只改一件事，杜绝文件写冲突；不同员工天然并发。
+2. **在跑（`running` / `retrying`）**：CLI 子进程执行中，支持实时日志流、600ms 防抖插话（流式员工）以及偶发故障指数退避自动重试。
+3. **等你（`waiting` / `failed` / `interrupted`）**：重试耗尽、确定性权限拦截（不浪费重试）或服务重启导致中断时进入「等你」，自动推给手机；支持单条重派、标记已处理以及 **「一键重派全部中断任务」**。
+4. **已结束（`completed` / `cancelled`）**：任务完成或手动取消，完整留存输出摘要、原始日志、会话 ID 与归一化 token/费用统计。
+
+---
+
+## 安全与合规护栏
+
+- **仅限本机回环**：默认绑定 `127.0.0.1`，严格校验 `Host` / `Origin` 防 DNS Rebinding；若显式绑定 `0.0.0.0` 会在控制台与健康接口给出明显警告。
+- **原生权限边界不妥协**：保持 Claude `acceptEdits` 与 Codex `workspace-write` 默认安全边界；Antigravity 仅在用户显式设为 `auto` 时放行无头执行，只读侧问强制 `plan` 模式。
+- **零凭据转发**：所有 CLI 直接复用本机已登录态；MCP 层只做本地 HTTP 薄转发；通道 Token / Secret / Webhook URL 全程掩码并在日志中自动脱敏。
+- **隐私数据彻底隔离**：运行期任务、日志、会话、真实员工配置与通道凭据全部落在 `data/`（已写入 `.gitignore`），永不随代码提交或随 npm 包发布。
+
+---
+
+## 演进路线与附录
+
+- **开发路线图**：[ROADMAP.md](./ROADMAP.md)
+- **更新日志**：[CHANGELOG.md](./CHANGELOG.md)
+- **`v1.1.0` 前端重塑蓝图**（2D 像素工位双视图、右侧产物实时预览、员工中途热切换 Handoff、可选 Git Worktree 隔离）：[docs/ui-inspiration.md](./docs/ui-inspiration.md)
+- **可选附录 · DSH 插件兼容模式**：原有 `plugin/` 目录仍完整保留，如需以插件方式嵌入 DeepSeek Harness，请参阅 [INSTALL.md](./INSTALL.md)。
+
+## 开源协议
+
+[MIT](./LICENSE)

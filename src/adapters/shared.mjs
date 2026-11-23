@@ -34,6 +34,7 @@ export function runStream(options) {
     args,
     input,
     parseLine,
+    onPlainLine,
     finalize,
     streamInput = false,
     formatInput = (text) => String(text),
@@ -122,7 +123,14 @@ export function runStream(options) {
     try {
       event = JSON.parse(trimmed);
     } catch {
-      // 不是 JSON 的行（例如 CLI 的提示语）只进日志，不打断解析。
+      // 不是 JSON 的行：默认只进日志；若适配器提供 onPlainLine 则交给它兜底提取文本。
+      if (typeof onPlainLine === "function") {
+        try {
+          onPlainLine(trimmed, state, { progress, hooks });
+        } catch {
+          // 单行处理失败不能毁掉整个任务。
+        }
+      }
       return;
     }
     try {

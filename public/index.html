@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Agent Hub</title>
+  <title>CyberForeman · 赛博包工头</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -15,8 +15,8 @@
           <svg viewBox="0 0 24 24"><path d="M5 7.5h14M5 12h9M5 16.5h14"/><circle cx="18" cy="12" r="2"/></svg>
         </div>
         <div>
-          <h1>Agent Hub</h1>
-          <p>DSH 主控 · 本地任务总线 · 员工按项目分组</p>
+          <h1>CyberForeman · 赛博包工头</h1>
+          <p>独立本地多 Agent 调度中枢 · MCP / 网页看板 / 手机四通道遥控</p>
         </div>
       </div>
       <div class="topbar-right">
@@ -107,7 +107,10 @@
             </label>
             <label class="field model-field">
               <span id="model-label">模型</span>
-              <input id="model" type="text" spellcheck="false" list="model-options" placeholder="默认">
+              <div class="model-row">
+                <input id="model" type="text" spellcheck="false" list="model-options" placeholder="默认（可手输）">
+                <button class="ghost small" id="refresh-model" type="button" title="实时重读该员工对应 CLI 的本地配置与可用模型">刷新</button>
+              </div>
             </label>
             <datalist id="model-options"></datalist>
             <label class="check" title="勾上＝这次不带上次的对话记忆，从头开始。不勾＝接着这个员工在这个目录下的上一次对话继续说。">
@@ -121,7 +124,10 @@
 
         <div class="flow-head">
           <h2>任务<span class="scope" id="list-scope">全部</span></h2>
-          <button class="link" id="refresh-tasks" type="button">刷新</button>
+          <div class="flow-head-actions">
+            <button class="ghost small" id="retry-interrupted" type="button" hidden>一键重派中断任务</button>
+            <button class="link" id="refresh-tasks" type="button">刷新</button>
+          </div>
         </div>
         <div class="flow" id="task-list">
           <p class="empty">还没有任务</p>
@@ -260,8 +266,12 @@
           <small id="w-budget-hint"></small>
         </label>
         <label class="field">
-          <span id="w-model-label">模型（留空＝跟随路由）</span>
-          <input id="w-model" type="text" spellcheck="false" list="w-model-options" placeholder="默认">
+          <span id="w-model-label">模型（留空＝跟随默认）</span>
+          <div class="model-row">
+            <input id="w-model" type="text" spellcheck="false" list="w-model-options" placeholder="留空＝默认，或直接输入模型名">
+            <button class="ghost small" id="w-refresh-model" type="button" title="实时重读该类型 CLI 的本地配置与可用模型">刷新</button>
+          </div>
+          <small id="w-model-hint">可下拉选择，也可直接输入自定义模型名。</small>
         </label>
         <datalist id="w-model-options"></datalist>
         <label class="field full">
@@ -367,6 +377,40 @@
       <div class="modal-actions">
         <span class="spacer"></span>
         <button class="ghost" id="usage-close" type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 模板编辑 -->
+  <div class="overlay hidden" id="template-modal">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="template-modal-title">编辑模板</h2>
+        <button class="icon-button" id="tpl-cancel" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="form-grid">
+        <label class="field full">
+          <span>模板名称</span>
+          <input id="tpl-name" type="text" maxlength="30" placeholder="例如：每日代码巡检">
+        </label>
+        <label class="field">
+          <span>默认员工（可选）</span>
+          <select id="tpl-worker"></select>
+        </label>
+        <label class="field">
+          <span>默认工作目录（可选）</span>
+          <input id="tpl-cwd" type="text" spellcheck="false" placeholder="留空＝跟随当前员工目录">
+        </label>
+        <label class="field full">
+          <span>提示词内容</span>
+          <textarea id="tpl-prompt" rows="5" placeholder="写清目标、范围、产物路径和验收标准"></textarea>
+        </label>
+      </div>
+      <p class="modal-note" id="tpl-msg"></p>
+      <div class="modal-actions">
+        <span class="spacer"></span>
+        <button class="ghost" id="tpl-cancel-2" type="button">取消</button>
+        <button class="primary" id="tpl-save" type="button">保存模板</button>
       </div>
     </div>
   </div>

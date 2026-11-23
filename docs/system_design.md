@@ -100,7 +100,7 @@ Web 面板 → server.mjs ┘（HTTP 入口，仍是唯一对外 API）
 |---|---|---|---|---|
 | Claude | `claude-cli` | ✅（需开「允许插话」） | `-p` 是开关、prompt 走 stdin；加 `--input-format stream-json` 后 stdin 可保持打开，逐行写 `{"type":"user",...}` 触发新一轮 | — |
 | Codex | `codex-cli` | ❌ 永不支持 | `codex exec <prompt>` prompt 是位置参数，一次性执行，无持续输入入口 | 「Codex 不支持插话，已改为侧问」+ 侧问答案 |
-| 反重力 | `agy-cli` | ❌ | `-p <content>` 位置参数，同上 | 同上 |
+| Antigravity | `agy-cli` | ❌ | `-p <content>` 位置参数，同上 | 同上 |
 | 未来类型 | — | 由 `supportsSteer` 声明，默认 `false` | — | 同上 |
 
 **流式输入的三个前提**（写进实现注释）：

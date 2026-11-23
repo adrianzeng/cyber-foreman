@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFil
 import { dirname, isAbsolute, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { getAdapter } from "./adapters/index.mjs";
-import { commandExists, isDirectory } from "./fsutil.mjs";
+import { commandExists, detectCliCommand, isDirectory } from "./fsutil.mjs";
 
 const MAX_WORKERS = 50;
 
@@ -66,12 +66,22 @@ export function normalizeWorker(input, { id, all = {} } = {}) {
   const adapter = getAdapter(kind);
   if (!adapter) fail(`不支持的员工类型：${kind}`);
 
-  const command = cleanText(input.command, 400);
+  let command = cleanText(input.command, 400);
+  let argsPrefix = Array.isArray(input.argsPrefix)
+    ? input.argsPrefix.map((part) => String(part)).filter(Boolean).slice(0, 20)
+    : [];
   if (!command) fail("启动命令不能为空");
   if (isAbsolute(command)) {
     if (!existsSync(command)) fail(`这个路径下没有程序：${command}`);
   } else if (!commandExists(command)) {
-    fail(`系统里找不到命令：${command}`);
+    // 允许像 "agy" 这类默认命令名通过自动探测找到本机已知安装路径。
+    const detected = detectCliCommand(kind);
+    if (detected.found && adapter.defaultCommand && command.toLowerCase() === adapter.defaultCommand.toLowerCase()) {
+      command = detected.command;
+      if (!argsPrefix.length && detected.argsPrefix.length) argsPrefix = detected.argsPrefix;
+    } else {
+      fail(`系统里找不到命令：${command}`);
+    }
   }
 
   const rawCwd = cleanText(input.cwd, 400);
@@ -103,15 +113,15 @@ export function normalizeWorker(input, { id, all = {} } = {}) {
     name,
     kind,
     command,
-    argsPrefix: Array.isArray(input.argsPrefix)
-      ? input.argsPrefix.map((part) => String(part)).filter(Boolean).slice(0, 20)
-      : [],
+    argsPrefix,
     cwd,
     addDirs: extraDirs,
     permissionMode,
     model: cleanText(input.model, 120),
     effort: cleanText(input.effort, 20),
-    disabled: input.disabled === true,
+    disabled: input.disabled === "auto"
+      ? !detectCliCommand(kind).found
+      : input.disabled === true,
     note: cleanText(input.note, 200),
   };
   // 单任务花费上限；只有一个上限，0 或留空表示不限。
@@ -184,7 +194,12 @@ export class WorkerStore {
         result[id] = next;
         if (JSON.stringify(next) !== JSON.stringify(source[id])) changed = true;
       } catch {
-        result[id] = raw;
+        // 种子里启用了自动探测的 CLI（如 agy）在本机未安装时，保持停用以免阻塞启动。
+        if (raw && typeof raw === "object" && (raw.disabled === "auto" || (raw.disabled === undefined && raw.kind === "agy-cli"))) {
+          result[id] = { ...raw, disabled: true };
+        } else {
+          result[id] = raw;
+        }
       }
     }
     return { workers: result, changed };
@@ -294,7 +309,7 @@ export class WorkerStore {
     return this.workers[id] || null;
   }
 
-  /** 供面板表单预填：同类型已有员工用的命令，能让“新增”少填一项。 */
+  /** 供面板表单预填：优先复用同类型已有员工的命令，否则走本机 CLI 自动探测。 */
   commandTemplateFor(kind, excludeId = null) {
     const same = Object.values(this.workers).find(
       (worker) =>
@@ -302,7 +317,9 @@ export class WorkerStore {
         worker.id !== excludeId &&
         !isBareInterpreter(worker.command, worker.argsPrefix),
     );
-    if (!same) return { command: "", argsPrefix: [] };
-    return { command: same.command, argsPrefix: same.argsPrefix || [] };
+    if (same) return { command: same.command, argsPrefix: same.argsPrefix || [] };
+    const detected = detectCliCommand(kind);
+    if (detected.found) return { command: detected.command, argsPrefix: detected.argsPrefix || [] };
+    return { command: "", argsPrefix: [] };
   }
 }

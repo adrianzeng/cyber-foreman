@@ -39,6 +39,14 @@ const FIELDS = [
     required: false,
     hint: "默认 https://api.telegram.org；只有自建反代时才改",
   },
+  {
+    key: "notifyEnabled",
+    label: "任务完成或卡住时主动推送通知",
+    type: "switch",
+    secret: false,
+    required: false,
+    hint: "开启后，网页或 MCP 派发的任务完成/落入「等你」时也会自动推到已绑定会话",
+  },
 ];
 
 class TelegramError extends Error {

@@ -1,12 +1,29 @@
 {
-  "name": "@local/dsh-agent-hub",
-  "version": "0.8.0",
-  "private": true,
-  "description": "DSH 主控、独立本地 Hub、Claude / Codex CLI 员工的本地多 Agent 调度闭环，可用手机 IM 遥控",
+  "name": "cyber-foreman",
+  "version": "1.0.0",
+  "description": "CyberForeman（赛博包工头）— 独立本地多 Agent 调度中枢：跨桌面端 MCP 枢纽 + 独立网页看板 + 手机四通道遥控（Telegram/飞书/QQ/微信）+ 多 CLI 员工矩阵（Claude/Codex/Antigravity/Kimi/豆包）",
+  "keywords": [
+    "cyber-foreman",
+    "agent-hub",
+    "multi-agent",
+    "mcp",
+    "claude-code",
+    "codex",
+    "antigravity",
+    "kimi-cli",
+    "doubao-cli",
+    "telegram",
+    "feishu",
+    "qq-bot",
+    "wechat"
+  ],
   "type": "module",
   "main": "./plugin/index.mjs",
   "bin": {
-    "dsh-agent-hub": "./bin/dsh-agent-hub.mjs"
+    "cyber-foreman": "./bin/cyber-foreman.mjs",
+    "cyber-foreman-mcp": "./bin/cyber-foreman-mcp.mjs",
+    "dsh-agent-hub": "./bin/dsh-agent-hub.mjs",
+    "dsh-agent-hub-mcp": "./bin/dsh-agent-hub-mcp.mjs"
   },
   "exports": {
     ".": "./plugin/index.mjs",
@@ -15,22 +32,32 @@
   },
   "files": [
     "bin",
-    "plugin",
     "src",
     "public",
+    "tools/launch.mjs",
+    "tools/stop.mjs",
     "config/workers.example.json",
     "config/channels.example.json",
-    "cordis.patch.yml"
+    "plugin",
+    "cordis.patch.yml",
+    "docs/mcp-integration.md",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "scripts": {
-    "start": "node bin/dsh-agent-hub.mjs",
-    "dev": "node --watch bin/dsh-agent-hub.mjs",
-    "cli": "node bin/dsh-agent-hub.mjs",
-    "test": "node --test --test-concurrency=1 test/hub.test.mjs test/server.test.mjs test/workers.test.mjs test/models.test.mjs test/session.test.mjs test/usage.test.mjs test/log-usage.test.mjs test/templates.test.mjs test/channels.test.mjs test/cli-options.test.mjs test/host-guard.test.mjs test/telegram.test.mjs test/steer.test.mjs test/side.test.mjs test/feishu-normalize.test.mjs",
-    "check": "node --check src/server.mjs && node --check src/hub.mjs && node --check src/store.mjs && node --check src/fsutil.mjs && node --check src/models.mjs && node --check src/usage.mjs && node --check src/log-usage.mjs && node --check src/workers-store.mjs && node --check src/templates-store.mjs && node --check src/config.mjs && node --check src/cli-options.mjs && node --check src/routes/channels.mjs && node --check src/channels/index.mjs && node --check src/channels/base.mjs && node --check src/channels/store.mjs && node --check src/channels/secrets.mjs && node --check src/channels/intent.mjs && node --check src/channels/router.mjs && node --check src/channels/notify.mjs && node --check src/channels/telegram.mjs && node --check src/channels/wecom.mjs && node --check src/channels/wechat.mjs && node --check src/channels/feishu.mjs && node --check src/channels/feishu-normalize.mjs && node --check src/adapters/shared.mjs && node --check src/adapters/index.mjs && node --check src/adapters/claude.mjs && node --check src/adapters/codex.mjs && node --check src/adapters/agy.mjs && node --check bin/dsh-agent-hub.mjs && node --check plugin/index.mjs && node --check public/app.js && node --check public/panel-common.js && node --check public/panel-workbench.js && node --check public/panel-talk.js && node --check public/panel-channels.js"
+    "start": "node bin/cyber-foreman.mjs",
+    "start:bg": "node tools/launch.mjs",
+    "stop": "node tools/stop.mjs",
+    "dev": "node --watch bin/cyber-foreman.mjs",
+    "cli": "node bin/cyber-foreman.mjs",
+    "mcp": "node bin/cyber-foreman-mcp.mjs",
+    "test": "node --test --test-concurrency=1 test/hub.test.mjs test/server.test.mjs test/workers.test.mjs test/models.test.mjs test/session.test.mjs test/usage.test.mjs test/log-usage.test.mjs test/templates.test.mjs test/channels.test.mjs test/cli-options.test.mjs test/host-guard.test.mjs test/telegram.test.mjs test/steer.test.mjs test/side.test.mjs test/feishu-normalize.test.mjs test/mcp.test.mjs test/cli-detect.test.mjs test/adapters-agy.test.mjs test/adapters-kimi-doubao.test.mjs test/v095.test.mjs test/v100.test.mjs",
+    "check": "node --check src/server.mjs && node --check src/hub.mjs && node --check src/store.mjs && node --check src/fsutil.mjs && node --check src/models.mjs && node --check src/usage.mjs && node --check src/log-usage.mjs && node --check src/workers-store.mjs && node --check src/templates-store.mjs && node --check src/config.mjs && node --check src/cli-options.mjs && node --check src/routes/channels.mjs && node --check src/channels/index.mjs && node --check src/channels/base.mjs && node --check src/channels/store.mjs && node --check src/channels/secrets.mjs && node --check src/channels/intent.mjs && node --check src/channels/router.mjs && node --check src/channels/notify.mjs && node --check src/channels/telegram.mjs && node --check src/channels/qq.mjs && node --check src/channels/wecom.mjs && node --check src/channels/wechat.mjs && node --check src/channels/feishu.mjs && node --check src/channels/feishu-normalize.mjs && node --check src/adapters/shared.mjs && node --check src/adapters/index.mjs && node --check src/adapters/claude.mjs && node --check src/adapters/codex.mjs && node --check src/adapters/agy.mjs && node --check src/adapters/kimi.mjs && node --check src/adapters/doubao.mjs && node --check src/mcp/server.mjs && node --check bin/cyber-foreman.mjs && node --check bin/cyber-foreman-mcp.mjs && node --check bin/dsh-agent-hub.mjs && node --check bin/dsh-agent-hub-mcp.mjs && node --check tools/launch.mjs && node --check tools/stop.mjs && node --check plugin/index.mjs && node --check public/app.js && node --check public/panel-common.js && node --check public/panel-workbench.js && node --check public/panel-talk.js && node --check public/panel-channels.js"
   },
   "dependencies": {
-    "@larksuiteoapi/node-sdk": "^1.76.0"
+    "@larksuiteoapi/node-sdk": "^1.76.0",
+    "@modelcontextprotocol/sdk": "^1.32.2"
   },
   "dsh": {
     "client": {
@@ -47,6 +74,14 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adrianzeng/cyber-foreman.git"
+  },
+  "homepage": "https://github.com/adrianzeng/cyber-foreman#readme",
+  "bugs": {
+    "url": "https://github.com/adrianzeng/cyber-foreman/issues"
   },
   "license": "MIT"
 }

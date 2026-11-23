@@ -62,19 +62,32 @@ const FALLBACK_CHANNELS = [
     ],
   },
   {
+    id: "qq",
+    label: "QQ",
+    implemented: true,
+    readiness: "ready",
+    note: "QQ 开放平台官方机器人（WebSocket 长连接，无需公网 IP），支持 /员工、/派、/换 等全部指令。",
+    fields: [
+      { key: "appId", label: "AppID", type: "text", secret: false, required: true, hint: "QQ 开放平台 → BotAppID" },
+      { key: "clientSecret", label: "ClientSecret（机器人密钥）", type: "password", secret: true, required: true, hint: "只存本地 data/channels.json" },
+      { key: "sandbox", label: "使用沙箱环境", type: "switch", secret: false },
+      { key: "notifyEnabled", label: "任务完成或卡住时主动推送通知", type: "switch", secret: false },
+    ],
+  },
+  {
     id: "wecom",
     label: "企业微信",
-    implemented: false,
-    readiness: "needs-public",
-    note: "需要公网回调地址（ngrok 之类）才能收消息，本阶段还没做，下一阶段补。",
+    implemented: true,
+    readiness: "ready",
+    note: "支持企业微信官方群机器人 Webhook（免公网主动推送）及本地合规插件桥接（双向遥控）。",
     fields: [],
   },
   {
     id: "wechat",
-    label: "个人微信",
-    implemented: false,
-    readiness: "unsupported",
-    note: "微信 4.x 目前没有稳定的免费接入方案，仅保留接口位。",
+    label: "微信",
+    implemented: true,
+    readiness: "ready",
+    note: "采用本地合规扫码/桌面桥接模式（参考 AionUi），不使用易封号逆向协议。",
     fields: [],
   },
 ];
@@ -218,17 +231,25 @@ async function loadChannels({ quiet = false } = {}) {
   return list;
 }
 
+function optionValue(option) {
+  return typeof option === "string" ? option : option?.value ?? "";
+}
+
+function optionLabel(option) {
+  return typeof option === "string" ? option : (option?.label || option?.value || "");
+}
+
 function draftFor(channel) {
   if (!drafts.has(channel.id)) {
     const values = {};
     for (const field of channel.fields || []) {
       const raw = channel.config?.[field.key];
       if (field.type === "switch") {
-        values[field.key] = raw === true;
+        values[field.key] = field.key === "notifyEnabled" ? raw !== false : raw === true;
       } else if (field.type === "select") {
         const options = field.options || [];
-        const known = options.some((option) => option.value === raw);
-        values[field.key] = known ? raw : (options[0]?.value || "");
+        const known = options.some((option) => optionValue(option) === raw);
+        values[field.key] = known ? raw : optionValue(options[0]);
       } else {
         values[field.key] = raw === undefined || raw === null ? "" : String(raw);
       }
@@ -309,7 +330,10 @@ function renderStatusBlock(channel, draft) {
 
   const stateText = STATE_TEXT[status.state] || status.state || "已停止";
   row.append(el("span", `chan-state ${status.state || "stopped"}`, stateText));
-  if (status.me) row.append(el("span", "chan-meta", status.me));
+  if (status.me) {
+    const meText = typeof status.me === "string" ? status.me : (status.me.name || status.me.username || status.me.id || "");
+    if (meText) row.append(el("span", "chan-meta", meText));
+  }
   section.append(row);
 
   if (!channel.implemented) {
@@ -360,8 +384,8 @@ function renderFormBlock(channel, draft) {
       input = document.createElement("select");
       for (const option of field.options || []) {
         const node = document.createElement("option");
-        node.value = option.value;
-        node.textContent = option.label || option.value;
+        node.value = optionValue(option);
+        node.textContent = optionLabel(option);
         input.append(node);
       }
       input.value = draft.values[field.key] || "";

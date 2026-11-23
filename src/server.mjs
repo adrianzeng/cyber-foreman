@@ -8,7 +8,7 @@ import { AgentHub } from "./hub.mjs";
 import { WorkerStore } from "./workers-store.mjs";
 import { TemplateStore } from "./templates-store.mjs";
 import { listAdapters } from "./adapters/index.mjs";
-import { isDirectory, listDirectories, listDrives, parentDirectory } from "./fsutil.mjs";
+import { detectCliCommand, isDirectory, listDirectories, listDrives, parentDirectory } from "./fsutil.mjs";
 import { DEFAULT_HOST, LOOPBACK_HOSTS, PROJECT_ROOT, isLoopbackHost, loadConfig } from "./config.mjs";
 import { pickPort } from "./cli-options.mjs";
 import { ChannelConfigStore } from "./channels/store.mjs";
@@ -246,19 +246,23 @@ export async function createHubServer(options = {}) {
         return;
       }
       if (method === "GET" && pathname === "/api/adapters") {
-        // 顺带把“这类员工现成的启动方式”给前端，避免切类型后命令对不上。
+        // 顺带把“这类员工现成的启动方式”和本机 CLI 探测结果给前端，避免切类型后命令对不上。
         const adapters = listAdapters().map((adapter) => ({
           ...adapter,
           commandTemplate: workerStore.commandTemplateFor(adapter.kind),
+          detected: detectCliCommand(adapter.kind),
         }));
         json(response, 200, { adapters });
         return;
       }
       if (method === "GET" && pathname === "/api/models") {
-        // 模型候选全部来自本机已有配置，不内置写死的清单。
+        // 模型候选全部按 kind 严格隔离并来自本机配置；refresh=1 强制实时重读。
+        const refreshParam = url.searchParams.get("refresh");
+        const refresh = refreshParam === "1" || refreshParam === "true";
         json(response, 200, hub.modelOptions(
           url.searchParams.get("kind"),
           url.searchParams.get("workerId"),
+          { refresh },
         ));
         return;
       }
@@ -403,6 +407,11 @@ export async function createHubServer(options = {}) {
         return;
       }
 
+      if (method === "POST" && pathname === "/api/tasks/retry-interrupted") {
+        json(response, 200, hub.retryInterruptedTasks());
+        return;
+      }
+
       // 任务中对话：插话 / 侧问。策略（含 auto 降级）只在 Hub.say 里一份，
       // 面板按 Enter 和 IM 无前缀消息都走这里，前端不做任何特判。
       const sayMatch = /^\/api\/tasks\/([A-Za-z0-9_-]+)\/say$/.exec(pathname);
@@ -498,7 +507,7 @@ function printBanner(context, { host, port }) {
   const version = hub.overview().version;
   const wildcard = host === "0.0.0.0" || host === "::" || host === "";
   const address = wildcard ? `http://127.0.0.1:${port}（本机；已对外开放）` : `http://${host}:${port}`;
-  console.log(`DSH Agent Hub v${version}`);
+  console.log(`CyberForeman（赛博包工头） v${version}`);
   console.log(`地址: ${address}`);
   console.log(`数据目录: ${config.dataDir}`);
   console.log(`配置文件: ${config.configFile}`);
@@ -525,7 +534,7 @@ function installShutdown(context) {
   const shutdown = async () => {
     if (closing) return;
     closing = true;
-    console.log("\n正在停止 Hub...");
+    console.log("\n正在停止 CyberForeman...");
     // 先停通道（不再收新消息），再停任务。
     try {
       await context.channelManager.stopAll();

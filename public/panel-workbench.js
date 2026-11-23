@@ -128,6 +128,25 @@ export function renderStatusline() {
 
   const scope = $("list-scope");
   if (scope) scope.textContent = STAGE_TEXT[state.stage] || "全部";
+
+  updateInterruptedAction();
+}
+
+/** 只要存在未处理的重启中断任务，就在任务流顶部显示一键批量重派按钮。 */
+function updateInterruptedAction() {
+  const btn = $("retry-interrupted");
+  if (!btn) return;
+  const fromCounts = Number(state.overview?.counts?.interrupted) || 0;
+  const unackedInView = (state.tasks || []).filter(
+    (task) => !isSide(task) && task.status === "interrupted" && !task.acknowledgedAt,
+  ).length;
+  // counts.interrupted 包含已标记处理的，所以当 waiting 为 0 时隐藏按钮，避免空点。
+  const waitingCount = Number(state.overview?.counts?.stages?.waiting) || 0;
+  const count = waitingCount > 0 ? (unackedInView || fromCounts) : 0;
+  btn.hidden = count <= 0;
+  if (count > 0) {
+    btn.textContent = `一键重派中断任务（${count}）`;
+  }
 }
 
 /* ---------------- 左栏：项目与员工 ---------------- */
@@ -313,15 +332,24 @@ export function renderWorkerSelect() {
 }
 
 /**
- * 模型候选全部由后端从本机配置里读出来，前端不写死任何模型名。
- * 用 datalist：能下拉选，也能直接手打库里没有的模型。
+ * 模型候选全部由后端按员工 kind 严格隔离并从本机配置读取，前端不写死任何模型名。
+ * 用 datalist：能下拉选，也能直接手打库里没有的自定义模型名。
+ * 按 listId 记单调序号，避免快速切换员工类型时旧请求覆盖新结果。
  */
-async function fillModelOptions(listId, kind, workerId = null) {
+const modelFetchSeq = new Map();
+
+async function fillModelOptions(listId, kind, workerId = null, { refresh = false } = {}) {
+  const seq = (modelFetchSeq.get(listId) || 0) + 1;
+  modelFetchSeq.set(listId, seq);
+  const list = $(listId);
+  if (list) list.replaceChildren();
+
   try {
     const query = new URLSearchParams({ kind: kind || "" });
     if (workerId) query.set("workerId", workerId);
-    const data = await api(`/api/models?${query}`);
-    const list = $(listId);
+    if (refresh) query.set("refresh", "1");
+    const data = await api(`/api/models?${query}`, { cache: "no-store" });
+    if (modelFetchSeq.get(listId) !== seq) return null;
     if (!list) return data;
     list.replaceChildren();
     for (const item of data.models || []) {
@@ -337,18 +365,20 @@ async function fillModelOptions(listId, kind, workerId = null) {
   }
 }
 
-/** 派活区的模型框：留空 = 完全跟随 CLI / 路由；占位提示写出那个默认值。 */
-async function syncModelField() {
+/** 派活区的模型框：留空 = 完全跟随该员工对应 CLI 的默认配置；支持手输自定义模型。 */
+async function syncModelField({ refresh = false } = {}) {
   const worker = workerById($("worker-select")?.value);
-  if (!worker) return;
-  const data = await fillModelOptions("model-options", worker.kind, worker.id);
-  const effective = data?.current || worker.effectiveModel || "";
+  if (!worker) return null;
+  const data = await fillModelOptions("model-options", worker.kind, worker.id, { refresh });
+  if (!data) return null;
+  const effective = data.current || worker.effectiveModel || "";
   const input = $("model");
-  if (!input) return;
-  input.placeholder = effective || "跟随路由";
+  if (!input) return data;
+  input.placeholder = effective ? `默认 ${effective}` : "留空＝默认（可手输）";
   input.title = effective
-    ? `留空＝用路由给这个 harness 配的模型 ${effective}。只有想临时换一次时才填。`
-    : "留空就跟随 CLI / 路由配置；想临时换一次才填。";
+    ? `留空＝使用该员工默认模型 ${effective}。可从下拉选择或直接输入自定义模型名。`
+    : "留空＝跟随该 CLI 默认配置；可从下拉选择或直接输入自定义模型名。";
+  return data;
 }
 
 export async function loadTemplates() {
@@ -370,10 +400,17 @@ export function renderTemplates() {
     chip.type = "button";
     chip.title = `${tpl.prompt.slice(0, 160)}${tpl.prompt.length > 160 ? "…" : ""}`;
     chip.append(el("span", "template-chip-name", tpl.name));
+    const edit = el("span", "template-chip-edit", "✎");
+    edit.title = "编辑这个模板";
     const remove = el("span", "template-chip-remove", "×");
     remove.title = "删除这个模板";
-    chip.append(remove);
+    chip.append(edit, remove);
     chip.addEventListener("click", (event) => {
+      if (event.target === edit) {
+        event.stopPropagation();
+        openTemplateModal(tpl);
+        return;
+      }
       if (event.target === remove) {
         event.stopPropagation();
         deleteTemplate(tpl);
@@ -382,6 +419,85 @@ export function renderTemplates() {
       applyTemplate(tpl);
     });
     box.append(chip);
+  }
+}
+
+function openTemplateModal(tpl) {
+  if (!tpl) return;
+  state.editingTemplateId = tpl.id;
+  $("template-modal-title").textContent = `编辑模板 · ${tpl.name}`;
+  $("tpl-name").value = tpl.name || "";
+  $("tpl-cwd").value = tpl.cwd || "";
+  $("tpl-prompt").value = tpl.prompt || "";
+  $("tpl-msg").textContent = "";
+  $("tpl-msg").className = "modal-note";
+
+  const select = $("tpl-worker");
+  select.replaceChildren();
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = "不指定（跟随当前派活选择）";
+  select.append(emptyOption);
+  for (const worker of state.workers || []) {
+    const option = document.createElement("option");
+    option.value = worker.id;
+    option.textContent = `${worker.name}（${baseName(worker.cwd || "")}）`;
+    select.append(option);
+  }
+  select.value = tpl.workerId && [...select.options].some((o) => o.value === tpl.workerId) ? tpl.workerId : "";
+
+  showModal("template-modal", true);
+  window.setTimeout(() => $("tpl-name").focus(), 40);
+}
+
+async function saveEditingTemplate() {
+  const id = state.editingTemplateId;
+  if (!id) return;
+  const payload = {
+    name: $("tpl-name").value.trim(),
+    prompt: $("tpl-prompt").value.trim(),
+    workerId: $("tpl-worker").value,
+    cwd: $("tpl-cwd").value.trim(),
+  };
+  const msg = $("tpl-msg");
+  msg.className = "modal-note";
+  msg.textContent = "保存中…";
+  const result = await softApi(`/api/templates/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  if (!result.ok) {
+    msg.className = "modal-note error";
+    msg.textContent = result.error?.message || "保存模板失败";
+    return;
+  }
+  showModal("template-modal", false);
+  await loadTemplates();
+  setFormNote(`已更新模板「${payload.name}」。`, "ok");
+  toast("模板已更新", "ok");
+}
+
+async function retryAllInterrupted() {
+  const ok = window.confirm("把所有未处理的重启中断任务一键重新放回队列？");
+  if (!ok) return;
+  const btn = $("retry-interrupted");
+  if (btn) btn.disabled = true;
+  try {
+    const result = await softApi("/api/tasks/retry-interrupted", { method: "POST", body: "{}" });
+    if (!result.ok) {
+      setFormNote(result.error?.message || "批量重派失败", "error");
+      return;
+    }
+    const { count = 0, skipped = [] } = result.data || {};
+    const extra = skipped.length ? `，跳过 ${skipped.length} 个（员工停用或已删）` : "";
+    const text = count
+      ? `已一键重派 ${count} 个中断任务${extra}。`
+      : `当前没有可重派的中断任务${extra}。`;
+    setFormNote(text, count ? "ok" : "");
+    toast(text, count ? "ok" : "");
+    await actions.refresh();
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -785,7 +901,7 @@ function updateBudgetField(kind) {
 
 /**
  * 插话相关字段：只有支持流式插话的员工类型才显示。
- * 不支持的（Codex / 反重力）藏起来并说明原因；后端还没给这个字段时也要说清是「没读到」而不是「不支持」。
+ * 不支持的（Codex / Antigravity / Kimi / Doubao）藏起来并说明原因；后端还没给这个字段时也要说清是「没读到」而不是「不支持」。
  */
 function updateSteerFields(kind) {
   const adapter = adapterOf(kind);
@@ -803,15 +919,24 @@ function updateSteerFields(kind) {
   }
 }
 
-/** 员工表单里的模型框：候选来自该 CLI 自己的配置，占位提示写清「留空会用什么」。 */
-async function syncWorkerModelField(workerId) {
+/** 员工表单里的模型框：候选严格来自该 kind 对应的 CLI 配置，支持手输自定义模型。 */
+async function syncWorkerModelField(workerId, { refresh = false } = {}) {
   const kind = $("w-kind").value;
-  const data = await fillModelOptions("w-model-options", kind, workerId);
-  const effective = data?.current || "";
-  $("w-model").placeholder = effective ? `留空＝${effective}` : "留空＝跟随路由";
+  const data = await fillModelOptions("w-model-options", kind, workerId, { refresh });
+  if (!data) return null;
+  const effective = data.current || "";
+  const count = (data.models || []).length;
+  $("w-model").placeholder = effective ? `留空＝${effective}` : "留空＝跟随默认，或直接输入模型名";
   $("w-model-label").textContent = effective
-    ? `模型（留空＝跟随路由的 ${effective}）`
-    : "模型（留空＝跟随路由）";
+    ? `模型（留空＝默认 ${effective}）`
+    : "模型（留空＝跟随默认）";
+  const hint = $("w-model-hint");
+  if (hint) {
+    hint.textContent = count
+      ? `已探测到 ${count} 个该类型候选模型，也可直接输入自定义模型名。`
+      : "当前未探测到预设候选，留空跟随 CLI 默认或直接输入自定义模型名。";
+  }
+  return data;
 }
 
 export function openWorkerModal(id = null, presetCwd = "") {
@@ -1070,7 +1195,22 @@ export function initWorkbench() {
     }
     updateBudgetField(kind);
     updateSteerFields(kind);
+    // 切换员工类型时清空上一个类型的模型，避免把 Claude 的模型误带到其他员工下。
+    $("w-model").value = "";
     syncWorkerModelField(state.editingWorkerId);
+  });
+  $("w-refresh-model").addEventListener("click", async () => {
+    const btn = $("w-refresh-model");
+    btn.disabled = true;
+    btn.textContent = "刷新中";
+    try {
+      const data = await syncWorkerModelField(state.editingWorkerId, { refresh: true });
+      const count = (data?.models || []).length;
+      toast(count ? `已刷新模型列表（${count} 个候选）` : "已重新读取本地配置（暂无预设候选，可直接手输）", "ok");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "刷新";
+    }
   });
   $("w-command").addEventListener("input", () => {
     state.commandTouched = true;
@@ -1099,7 +1239,22 @@ export function initWorkbench() {
       $("cwd").value = worker.cwd;
       state.cwdInitialized = true;
     }
+    // 切换派活对象时清掉临时手填的模型，防止不同类型员工串用模型名。
+    if ($("model")) $("model").value = "";
     syncModelField();
+  });
+  $("refresh-model").addEventListener("click", async () => {
+    const btn = $("refresh-model");
+    btn.disabled = true;
+    btn.textContent = "刷新中";
+    try {
+      const data = await syncModelField({ refresh: true });
+      const count = (data?.models || []).length;
+      toast(count ? `已刷新模型列表（${count} 个候选）` : "已重新读取本地配置（暂无预设候选，可直接手输）", "ok");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "刷新";
+    }
   });
   $("dispatch").addEventListener("click", () => dispatchTask());
   $("save-template").addEventListener("click", () => saveTemplateFromPrompt());
@@ -1163,6 +1318,14 @@ export function initWorkbench() {
   $("usage-open").addEventListener("click", () => openUsageModal());
   $("usage-cancel").addEventListener("click", () => showModal("usage-modal", false));
   $("usage-close").addEventListener("click", () => showModal("usage-modal", false));
+
+  // 模板编辑弹窗
+  $("tpl-cancel")?.addEventListener("click", () => showModal("template-modal", false));
+  $("tpl-cancel-2")?.addEventListener("click", () => showModal("template-modal", false));
+  $("tpl-save")?.addEventListener("click", () => saveEditingTemplate());
+
+  // 批量重派中断任务
+  $("retry-interrupted")?.addEventListener("click", () => retryAllInterrupted());
 
   // 中栏刷新（轮询之外的手动一次）
   $("refresh-tasks").addEventListener("click", () => {

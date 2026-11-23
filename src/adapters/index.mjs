@@ -1,6 +1,8 @@
 import claude from "./claude.mjs";
 import agy from "./agy.mjs";
 import codex from "./codex.mjs";
+import kimi from "./kimi.mjs";
+import doubao from "./doubao.mjs";
 
 /**
  * 员工类型注册表。
@@ -8,7 +10,7 @@ import codex from "./codex.mjs";
  * Hub、HTTP 接口和面板都不用改。
  */
 const ADAPTERS = new Map(
-  [claude, agy, codex].map((adapter) => [adapter.kind, adapter]),
+  [claude, agy, codex, kimi, doubao].map((adapter) => [adapter.kind, adapter]),
 );
 
 export const DEFAULT_KIND = "claude-cli";
@@ -32,6 +34,7 @@ export function listAdapters() {
       ? (adapter.steerHint || "这个类型支持插话：在员工设置里打开「允许插话」后可用。")
       : (adapter.steerHint || "这个类型不支持插话；可以改用侧问，或停掉任务重新派。"),
     budgetHint: adapter.budgetHint || "",
+    defaultCommand: adapter.defaultCommand || "",
     commandHint: adapter.commandHint || "",
     defaultPermissionMode: adapter.defaultPermissionMode || "",
     permissionModes: Array.isArray(adapter.permissionModes) ? adapter.permissionModes : [],

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,9 +7,12 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = Number(process.env.AGENT_HUB_PORT || 4647);
 const PANEL = `http://127.0.0.1:${PORT}`;
-const RULE = "-".repeat(42);
+const DATA_DIR = resolve(process.env.AGENT_HUB_DATA_DIR || join(ROOT, "data"));
+const PID_FILE = join(DATA_DIR, "hub.pid");
+const LOG_FILE = join(DATA_DIR, "hub-daemon.log");
+const RULE = "-".repeat(46);
 
-function isListening(timeoutMs = 800) {
+function isListening(timeoutMs = 500) {
   return new Promise((done) => {
     const socket = connect({ host: "127.0.0.1", port: PORT });
     let settled = false;
@@ -25,6 +29,15 @@ function isListening(timeoutMs = 800) {
   });
 }
 
+async function isHealthy() {
+  try {
+    const res = await fetch(`${PANEL}/api/health`, { signal: AbortSignal.timeout(1200) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 function openBrowser(url) {
   const command = process.platform === "win32"
     ? "explorer"
@@ -36,39 +49,22 @@ function openBrowser(url) {
   }
 }
 
-async function main() {
-  if (await isListening()) {
-    console.log("");
-    console.log("  Agent Hub 已经在运行了，不重复启动。");
-    console.log(`  正在打开面板：${PANEL}`);
-    console.log("");
-    openBrowser(PANEL);
-    return 0;
+function tailLog(file, maxLines = 20) {
+  if (!existsSync(file)) return "";
+  try {
+    return readFileSync(file, "utf8").trim().split(/\r?\n/).slice(-maxLines).join("\n");
+  } catch {
+    return "";
   }
+}
 
-  console.log("");
-  console.log(`  ${RULE}`);
-  console.log("     DSH Agent Hub");
-  console.log(`     面板地址：${PANEL}`);
-  console.log(`  ${RULE}`);
-  console.log("");
-  console.log("  正在启动，浏览器会在几秒后自动打开。");
-  console.log("");
-  console.log("  [重要] 这个窗口不要关。");
-  console.log("         关掉窗口就是停止服务，手机上就派不了活。");
-  console.log("");
-  console.log(`  ${RULE}`);
-  console.log("");
-
-  // 走 0.7.0 的正式入口：参数、数据目录、端口、通道开关都由 config.mjs 统一解析，
-  // 和 `npx dsh-agent-hub` 是同一个启动路径，别再直连 src/server.mjs。
-  const child = spawn(process.execPath, [join(ROOT, "bin", "dsh-agent-hub.mjs")], {
+async function runForeground() {
+  const child = spawn(process.execPath, [join(ROOT, "bin", "cyber-foreman.mjs")], {
     cwd: ROOT,
     stdio: "inherit",
     env: process.env,
   });
 
-  // 等端口真的通了再开浏览器，避免打开一个「无法访问」的页面。
   let opened = false;
   const timer = setInterval(async () => {
     if (opened) return;
@@ -80,7 +76,7 @@ async function main() {
   }, 400);
 
   const forward = () => {
-    try { child.kill(); } catch { /* 已经退出了 */ }
+    try { child.kill(); } catch { /* 已退出 */ }
   };
   process.on("SIGINT", forward);
   process.on("SIGTERM", forward);
@@ -94,11 +90,93 @@ async function main() {
   });
 
   clearInterval(timer);
+  return code;
+}
+
+async function runDetached() {
+  mkdirSync(DATA_DIR, { recursive: true });
+  const header = `\n===== CyberForeman daemon start ${new Date().toISOString()} =====\n`;
+  writeFileSync(LOG_FILE, header, { flag: "a", encoding: "utf8" });
+
+  const logFd = openSync(LOG_FILE, "a");
+  let child;
+  try {
+    child = spawn(process.execPath, [join(ROOT, "bin", "cyber-foreman.mjs")], {
+      cwd: ROOT,
+      detached: true,
+      windowsHide: true,
+      stdio: ["ignore", logFd, logFd],
+      env: process.env,
+    });
+  } finally {
+    closeSync(logFd);
+  }
+
+  let earlyExit = null;
+  child.once("exit", (code) => { earlyExit = code ?? 1; });
+  child.unref();
+
+  writeFileSync(
+    PID_FILE,
+    JSON.stringify({ pid: child.pid, port: PORT, startedAt: new Date().toISOString(), logFile: LOG_FILE }, null, 2),
+    "utf8",
+  );
+
+  // 等待端口与 /api/health 真正就绪（最长 15 秒）
+  const deadline = Date.now() + 15_000;
+  let ready = false;
+  while (Date.now() < deadline) {
+    if (earlyExit !== null) break;
+    if (await isHealthy()) {
+      ready = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+
+  if (!ready) {
+    console.error("  启动失败：15 秒内未检测到 CyberForeman 服务就绪。");
+    const detail = tailLog(LOG_FILE, 20);
+    if (detail) {
+      console.error("  最近日志：\n" + detail);
+    }
+    return 1;
+  }
+
   console.log("");
   console.log(`  ${RULE}`);
-  console.log("  服务已停止。");
+  console.log("     CyberForeman · 赛博包工头（后台常驻）");
+  console.log(`     面板地址：${PANEL}`);
+  console.log(`     后台 PID：${child.pid}`);
+  console.log(`     日志文件：${LOG_FILE}`);
+  console.log(`  ${RULE}`);
   console.log("");
-  return code;
+  console.log("  已切换为静默后台常驻，本窗口关闭不会中断服务。");
+  console.log("  如需停止服务，请双击根目录的 stop-hub.bat（或运行 npm run stop）。");
+  console.log("");
+
+  if (!process.argv.includes("--no-open")) {
+    openBrowser(PANEL);
+  }
+  return 0;
+}
+
+async function main() {
+  if (await isListening()) {
+    console.log("");
+    console.log("  CyberForeman（赛博包工头）已经在后台运行，不重复启动。");
+    console.log(`  正在打开面板：${PANEL}`);
+    console.log("");
+    if (!process.argv.includes("--no-open")) {
+      openBrowser(PANEL);
+    }
+    return 0;
+  }
+
+  if (process.argv.includes("--foreground")) {
+    return runForeground();
+  }
+  return runDetached();
 }
 
 main()

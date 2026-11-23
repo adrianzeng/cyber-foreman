@@ -40,7 +40,7 @@ test("HTTP API 与面板静态文件可用", async () => {
 
     const page = await fetch(`${base}/`);
     assert.equal(page.status, 200);
-    assert.match(await page.text(), /Agent Hub/);
+    assert.match(await page.text(), /CyberForeman/);
     const script = await fetch(`${base}/app.js`);
     assert.equal(script.status, 200);
 

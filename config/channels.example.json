@@ -1,9 +1,10 @@
 {
   "version": 1,
-  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-11-22T00:00:00.000Z",
   "channels": {
     "telegram": {
       "enabled": false,
+      "notifyEnabled": true,
       "token": "123456789:AAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       "apiBase": "https://api.telegram.org",
       "defaults": {
@@ -11,23 +12,12 @@
         "cwd": null,
         "newSession": false
       },
-      "allowlist": [
-        {
-          "chatId": "tg:837465123",
-          "chatType": "p2p",
-          "chatTitle": "阿德（私人）",
-          "workerId": "claude-1",
-          "cwd": "E:\\work\\demo",
-          "newSession": false,
-          "boundAt": "2026-01-01T00:00:00.000Z",
-          "boundBy": "pair-code",
-          "enabled": true
-        }
-      ],
+      "allowlist": [],
       "pairCode": null
     },
     "feishu": {
       "enabled": false,
+      "notifyEnabled": true,
       "appId": "cli_xxxxxxxxxxxxxxxx",
       "appSecret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       "domain": "open.feishu.cn",
@@ -39,31 +29,49 @@
       "allowlist": [],
       "pairCode": null
     },
+    "qq": {
+      "enabled": false,
+      "notifyEnabled": true,
+      "appId": "102000000",
+      "clientSecret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "sandbox": false,
+      "defaults": {
+        "workerId": null,
+        "cwd": null,
+        "newSession": false
+      },
+      "allowlist": [],
+      "pairCode": null
+    },
     "wecom": {
       "enabled": false,
+      "notifyEnabled": true,
+      "mode": "webhook",
+      "webhookUrl": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxxxxxx",
+      "bridgeUrl": "",
+      "bridgeToken": "",
+      "defaults": {
+        "workerId": null,
+        "cwd": null,
+        "newSession": false
+      },
       "allowlist": [],
-      "pairCode": null,
-      "note": "需要公网回调地址，下一阶段再做"
+      "pairCode": null
     },
     "wechat": {
       "enabled": false,
+      "notifyEnabled": true,
+      "bridgeUrl": "http://127.0.0.1:8787",
+      "bridgeToken": "",
+      "defaults": {
+        "workerId": null,
+        "cwd": null,
+        "newSession": false
+      },
       "allowlist": [],
-      "pairCode": null,
-      "note": "微信 4.x 暂无免费方案，这里只留位置"
+      "pairCode": null
     }
   },
-  "deliveries": [
-    {
-      "taskId": "task_20260101000000_ab12cd",
-      "channelId": "telegram",
-      "chatId": "tg:837465123",
-      "kind": "main",
-      "ackedAt": "2026-01-01T00:00:00.000Z",
-      "pushedAt": null,
-      "lastNotifiedStatus": "queued"
-    }
-  ],
-  "lastList": {
-    "tg:837465123": ["task_20260101000000_ab12cd"]
-  }
+  "deliveries": [],
+  "lastList": {}
 }

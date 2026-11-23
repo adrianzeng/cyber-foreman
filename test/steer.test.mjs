@@ -96,7 +96,7 @@ function seedTask(store, status) {
   return store.getTask(task.id);
 }
 
-test("能力矩阵：只有 Claude 声明 supportsSteer，Codex/反重力给出中文理由", () => {
+test("能力矩阵：只有 Claude 声明 supportsSteer，Codex/Antigravity 给出中文理由", () => {
   const adapters = listAdapters();
   const claude = adapters.find((item) => item.kind === "claude-cli");
   const codex = adapters.find((item) => item.kind === "codex-cli");
